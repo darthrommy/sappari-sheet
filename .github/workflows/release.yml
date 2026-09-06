@@ -30,7 +30,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # need full tag history to compute the next patch number
 
@@ -60,7 +60,7 @@ jobs:
             os: macos
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Rewrites the single `version:` line in pubspec.yaml. Not committed — the
       # build sees it, but main stays untouched until `publish`. The build-number
@@ -75,16 +75,18 @@ jobs:
           import os, re, pathlib
           v = os.environ["VERSION"]
           p = pathlib.Path("pubspec.yaml")
-          text = p.read_text()
+          # Binary I/O preserves the file's original line endings so releases
+          # produce a one-line diff rather than converting CRLF to LF wholesale.
+          data = p.read_bytes()
           new, n = re.subn(
-              r"(?m)^version:\s*[0-9][0-9.]*(?:\+\d+)?\s*$",
-              f"version: {v}+1",
-              text,
+              rb"(?m)^version:[ \t]*[0-9][0-9.]*(?:\+\d+)?[ \t]*$",
+              f"version: {v}+1".encode(),
+              data,
               count=1,
           )
           if n != 1:
               raise SystemExit("Could not find a version: line in pubspec.yaml")
-          p.write_text(new)
+          p.write_bytes(new)
           print(f"pubspec.yaml -> version: {v}+1")
           PY
 
@@ -159,7 +161,7 @@ jobs:
 
       # ----- Upload ----------------------------------------------------------
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.os }}
           path: release-artifacts/*
@@ -171,7 +173,7 @@ jobs:
     permissions:
       contents: write # commit the bump, push the tag, create the release
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -183,16 +185,16 @@ jobs:
           import os, re, pathlib
           v = os.environ["VERSION"]
           p = pathlib.Path("pubspec.yaml")
-          text = p.read_text()
+          data = p.read_bytes()
           new, n = re.subn(
-              r"(?m)^version:\s*[0-9][0-9.]*(?:\+\d+)?\s*$",
-              f"version: {v}+1",
-              text,
+              rb"(?m)^version:[ \t]*[0-9][0-9.]*(?:\+\d+)?[ \t]*$",
+              f"version: {v}+1".encode(),
+              data,
               count=1,
           )
           if n != 1:
               raise SystemExit("Could not find a version: line in pubspec.yaml")
-          p.write_text(new)
+          p.write_bytes(new)
           PY
 
       - name: Commit and push the bump
@@ -210,7 +212,7 @@ jobs:
           }
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: release-*
           merge-multiple: true
