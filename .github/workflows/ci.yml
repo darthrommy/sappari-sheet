@@ -1,8 +1,8 @@
 name: CI
 
-# Formatting, lints, tests, and a release build. Runs on windows-latest because
-# Windows is the primary target and the runner image ships Visual Studio with
-# the C++ workload already installed.
+# Formatting, lints, tests, a release build, and the Inno Setup installer. Runs
+# on windows-latest because Windows is the primary target and the runner image
+# ships Visual Studio with the C++ workload already installed.
 
 on:
   push:
@@ -41,6 +41,22 @@ jobs:
       - name: Build (Windows, release)
         run: flutter build windows --release
 
+      # The runner image normally ships Inno Setup; install it if a future
+      # image drops it rather than failing the run over a missing tool.
+      - name: Ensure Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup -y --no-progress
+          }
+
+      # Stages the VC++ runtime DLLs beside the exe, then compiles the setup
+      # program. Deliberately runs before "Upload build" so the plain folder
+      # artifact carries those DLLs too and is runnable on a clean machine.
+      - name: Build installer
+        shell: pwsh
+        run: .\installer\build-installer.ps1
+
       - name: Upload sample sheet
         if: always()
         uses: actions/upload-artifact@v4
@@ -54,4 +70,11 @@ jobs:
         with:
           name: negadice-windows
           path: build/windows/x64/runner/Release/
+          if-no-files-found: error
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: negadice-installer
+          path: installer/Output/*.exe
           if-no-files-found: error
