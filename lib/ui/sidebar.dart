@@ -1,6 +1,4 @@
-/// Left control column: source picker, sheet settings, export. Spec §7.
-///
-/// Japanese strings are copied verbatim from the Tauri original.
+/// Left control column: source picker, sheet settings, export.
 library;
 
 import 'dart:async';
@@ -69,7 +67,7 @@ class AppSidebar extends StatelessWidget {
                 ),
                 SizedBox(width: 10),
                 Text(
-                  'negadice',
+                  'Sappari Sheet',
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,

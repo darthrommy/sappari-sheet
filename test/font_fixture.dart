@@ -9,7 +9,7 @@
 // so one file serves every weight via its `wght` axis.
 
 import 'package:flutter/services.dart' show FontLoader, rootBundle;
-import 'package:negadice/render/text_metrics.dart';
+import 'package:sappari_sheet/render/text_metrics.dart';
 
 Future<void> loadFonts() async {
   final primary = FontLoader(fontFamily)

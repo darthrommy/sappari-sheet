@@ -1,7 +1,5 @@
 /// Filename acceptance, sanitization, output-path building, and the
 /// numeric-aware ("natural") ordering used to sort frames by filename.
-///
-/// Port of `negadice/src-tauri/src/naming.rs` — spec §5, tier [EXACT].
 library;
 
 import 'dart:convert';
@@ -87,9 +85,8 @@ int _compareBytes(List<int> a, List<int> b) {
 }
 
 /// Compare filenames the way a file manager does: digit runs compare by numeric
-/// value, everything else case-insensitively left to right.
-///
-/// Operates on UTF-8 bytes so the ordering matches the Rust original exactly.
+/// value, everything else case-insensitively left to right. Operates on UTF-8
+/// bytes.
 int naturalCmp(String aStr, String bStr) {
   final a = utf8.encode(aStr);
   final b = utf8.encode(bStr);

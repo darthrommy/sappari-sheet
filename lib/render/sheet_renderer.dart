@@ -1,10 +1,9 @@
 /// Sheet composition: cover-fit cropping, the title block, frame numbers,
 /// JPEG encoding and preview thumbnails.
 ///
-/// The layout is the Figma design (negadice-sheet, node 1:2) — every position,
-/// size, weight, letter spacing and colour comes from `core/geometry.dart`,
-/// which transcribes it. Nothing here is inherited from the Tauri original
-/// except cover-fit itself.
+/// The layout comes from the Figma design — every position, size, weight,
+/// letter spacing and colour comes from `core/geometry.dart`, which
+/// transcribes it.
 ///
 /// Composition runs through `dart:ui`: a [ui.PictureRecorder] plus [ui.Canvas],
 /// rasterized with `Picture.toImage`, then JPEG-encoded by `package:image`.

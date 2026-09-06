@@ -1,7 +1,7 @@
 // End-to-end smoke test: composes a representative sheet through the real
-// pipeline and writes it to `build/samples/` so the output can be eyeballed
-// against the Tauri original. Also asserts the file is a valid JPEG of the
-// right size, so it earns its place in CI as well.
+// pipeline and writes it to `build/samples/` so the output can be eyeballed.
+// Also asserts the file is a valid JPEG of the right size, so it earns its
+// place in CI as well.
 
 import 'dart:async';
 import 'dart:io';
@@ -10,9 +10,9 @@ import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
-import 'package:negadice/core/geometry.dart';
-import 'package:negadice/core/sheet_meta.dart';
-import 'package:negadice/render/sheet_renderer.dart';
+import 'package:sappari_sheet/core/geometry.dart';
+import 'package:sappari_sheet/core/sheet_meta.dart';
+import 'package:sappari_sheet/render/sheet_renderer.dart';
 
 import 'font_fixture.dart';
 

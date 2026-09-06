@@ -5,16 +5,16 @@ import 'ui/app_shell.dart';
 import 'ui/theme.dart';
 
 void main() {
-  runApp(const NegadiceApp());
+  runApp(const SappariSheetApp());
 }
 
-class NegadiceApp extends StatelessWidget {
-  const NegadiceApp({super.key});
+class SappariSheetApp extends StatelessWidget {
+  const SappariSheetApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'negadice',
+      title: 'Sappari Sheet',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
       // The UI is Japanese; without these the date picker comes up in English.

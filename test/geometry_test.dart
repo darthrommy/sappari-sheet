@@ -6,7 +6,7 @@
 // doubles do not; comparisons allow a thousandth of a pixel.
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:negadice/core/geometry.dart';
+import 'package:sappari_sheet/core/geometry.dart';
 
 const double eps = 0.001;
 

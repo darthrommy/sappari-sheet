@@ -1,7 +1,6 @@
 /// Sheet geometry — every value transcribed from the Figma design.
 ///
-/// Source: `negadice-sheet`, one frame per format, all sharing the `2:87`
-/// header component:
+/// One frame per format, all sharing the `2:87` header component:
 ///
 /// | format | node    | sheet       | grid   | cell                |
 /// |--------|---------|-------------|--------|---------------------|

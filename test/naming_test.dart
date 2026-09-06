@@ -1,8 +1,5 @@
-// Translation of the `#[cfg(test)] mod tests` in
-// `negadice/src-tauri/src/naming.rs` — spec §5 vectors, 1:1.
-
 import 'package:flutter_test/flutter_test.dart';
-import 'package:negadice/core/naming.dart';
+import 'package:sappari_sheet/core/naming.dart';
 
 void main() {
   test('accepts only supported extensions', () {

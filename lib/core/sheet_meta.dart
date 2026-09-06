@@ -1,10 +1,7 @@
 /// What the sheet's title block prints.
 ///
-/// Replaces the Tauri original's single free-text `memo`. That field's own
-/// placeholder was 「ロール名・日付・現像所など」, so this is the same information
-/// given structure rather than a new concept: the roll name becomes the sheet's
-/// title, the date its own column. Frame count and film format are derived at
-/// render time and never typed.
+/// The roll name becomes the sheet's title; the date its own column. Frame
+/// count and film format are derived at render time and never typed.
 library;
 
 class SheetMeta {

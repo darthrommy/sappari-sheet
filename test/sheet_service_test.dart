@@ -10,9 +10,9 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
-import 'package:negadice/core/geometry.dart';
-import 'package:negadice/core/sheet_meta.dart';
-import 'package:negadice/services/sheet_service.dart';
+import 'package:sappari_sheet/core/geometry.dart';
+import 'package:sappari_sheet/core/sheet_meta.dart';
+import 'package:sappari_sheet/services/sheet_service.dart';
 
 import 'font_fixture.dart';
 
@@ -50,7 +50,7 @@ void main() {
   late SheetService service;
 
   setUp(() {
-    dir = Directory.systemTemp.createTempSync('negadice_cache_test');
+    dir = Directory.systemTemp.createTempSync('sappari_sheet_cache_test');
     service = SheetService();
   });
 

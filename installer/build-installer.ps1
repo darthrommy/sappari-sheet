@@ -1,14 +1,14 @@
 <#
 .SYNOPSIS
-    Builds the negadice Windows installer.
+    Builds the Sappari Sheet Windows installer.
 
 .DESCRIPTION
     Wraps ISCC (the Inno Setup compiler) with the three things that must be
-    resolved at build time rather than hardcoded in negadice.iss:
+    resolved at build time rather than hardcoded in sappari-sheet.iss:
 
       1. The app version, parsed from pubspec.yaml.
       2. The Visual C++ runtime DLLs, located through vswhere and copied next
-         to negadice.exe so the installed app needs no VC++ redistributable.
+         to sappari_sheet.exe so the installed app needs no VC++ redistributable.
          The folder is named after the toolset (Microsoft.VC145.CRT on VS 2026,
          Microsoft.VC143.CRT on the VS 2022 that GitHub runners use), so it has
          to be discovered rather than assumed.
@@ -32,7 +32,7 @@ $ErrorActionPreference = 'Stop'
 $installerDir = $PSScriptRoot
 $repoRoot = Split-Path -Parent $installerDir
 $releaseDir = Join-Path $repoRoot 'build\windows\x64\runner\Release'
-$issFile = Join-Path $installerDir 'negadice.iss'
+$issFile = Join-Path $installerDir 'sappari-sheet.iss'
 
 # --- 1. Version from pubspec.yaml -----------------------------------------
 # `version: 26.7.0+1` -> `26.7.0`. Inno wants a plain dotted version; the
@@ -49,13 +49,13 @@ if ($appVersion -notmatch '^\d+(\.\d+){1,3}$') {
 Write-Host "Version:      $appVersion"
 
 # --- 2. The Flutter release build ------------------------------------------
-if (-not (Test-Path (Join-Path $releaseDir 'negadice.exe'))) {
+if (-not (Test-Path (Join-Path $releaseDir 'sappari_sheet.exe'))) {
     throw "No release build found at $releaseDir`nRun 'flutter build windows --release' first."
 }
 Write-Host "Release dir:  $releaseDir"
 
 # --- 3. Stage the Visual C++ runtime ---------------------------------------
-# negadice.exe imports MSVCP140.dll, VCRUNTIME140.dll and VCRUNTIME140_1.dll.
+# sappari_sheet.exe imports MSVCP140.dll, VCRUNTIME140.dll and VCRUNTIME140_1.dll.
 # They are present on any machine with Visual Studio but absent on a clean
 # Windows install, so ship them beside the executable (app-local deployment,
 # which Windows resolves before the system directory).
@@ -140,7 +140,7 @@ Write-Host "Compiler:     $iscc"
 & $iscc "/DAppVersion=$appVersion" "/DSourceDir=$releaseDir" $issFile
 if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
 
-$output = Join-Path $installerDir "Output\negadice-setup-$appVersion.exe"
+$output = Join-Path $installerDir "Output\sappari-sheet-setup-$appVersion.exe"
 if (-not (Test-Path $output)) { throw "ISCC reported success but $output does not exist." }
 
 $sizeMb = [math]::Round((Get-Item $output).Length / 1MB, 1)

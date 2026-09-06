@@ -6,10 +6,10 @@
 // date did — the preview silently stopped re-rendering.
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:negadice/core/geometry.dart';
-import 'package:negadice/core/sheet_meta.dart';
-import 'package:negadice/services/sheet_service.dart';
-import 'package:negadice/ui/preview_pane.dart';
+import 'package:sappari_sheet/core/geometry.dart';
+import 'package:sappari_sheet/core/sheet_meta.dart';
+import 'package:sappari_sheet/services/sheet_service.dart';
+import 'package:sappari_sheet/ui/preview_pane.dart';
 
 void main() {
   const a = Frame(path: 'a.jpg', fileName: 'a.jpg');

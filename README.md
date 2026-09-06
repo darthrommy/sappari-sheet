@@ -1,17 +1,9 @@
-# negadice — Flutter desktop port
+# Sappari Sheet
 
-Generates a photo index sheet (contact sheet) as a JPEG, laid out on a grid
-chosen by film format. One sheet, one roll.
+Generate Swiss-style contact sheet for digitized films.
 
-This is a Flutter desktop port of [negadice](../negadice), which is a Tauri 2
-app with the rendering core in Rust. The port reimplements that core natively in
-Dart rather than binding to it — see `docs/PORTING-SPEC.md` for the contract it
-holds to, and `docs/DEVIATIONS.md` for everywhere it departs from the original.
-
-The sheet layout is a Figma design —
-[negadice-sheet](https://www.figma.com/design/QMS8aKf6lWRNeUhuXVirfR/negadice-sheet?node-id=1-2),
-one frame per format — transcribed into `lib/core/geometry.dart`. **The Figma
-is the source of truth**; if code and design disagree, the design wins.
+A Flutter desktop app that produces a photo index sheet (contact sheet) as a
+JPEG, laid out on a grid chosen by film format. One sheet, one roll.
 
 A dark sheet — `#151515` ground, `#F0F0F0` ink — **3000 wide, each format
 taking its own negative's proportions**: 35mm 3:2, 6x6 square, 6x7 a 6:7
@@ -46,16 +38,13 @@ lib/
   services/   sheet_service.dart           — analyze / render / preview
   ui/         app_shell.dart, sidebar.dart, preview_pane.dart, theme.dart
 test/         geometry, naming, render, sheet_service, sample_sheet
-installer/    negadice.iss, build-installer.ps1 — Inno Setup packaging
+installer/    sappari-sheet.iss, build-installer.ps1 — Inno Setup packaging
 ```
 
-`core/` is deliberately Flutter-free and holds everything the spec tags
-**[EXACT]**: the transcribed layout constants and cell arithmetic, filename
-acceptance, natural ordering, sanitization, output paths, date parsing. The
-naming tests are 1:1 translations of the Rust `#[cfg(test)]` assertions; the
-geometry tests check the design's own numbers, to a thousandth of a pixel —
-Figma stores coordinates as float32, so its reported values carry rounding that
-these doubles do not.
+`core/` is deliberately Flutter-free and holds the layout constants, cell
+arithmetic, filename acceptance, natural ordering, sanitization, output paths,
+and date parsing. The geometry tests check the design's own numbers to a
+thousandth of a pixel.
 
 ## Develop
 
@@ -97,20 +86,21 @@ flutter build windows --release     # the installer packages this output
 .\installer\build-installer.ps1
 ```
 
-Produces `installer\Output\negadice-setup-<version>.exe` (~14 MB), where the
-version comes from `pubspec.yaml`.
+Produces `installer\Output\sappari-sheet-setup-<version>.exe` (~14 MB), where
+the version comes from `pubspec.yaml`.
 
 It is a **per-user** install: no UAC prompt, no administrator rights, and it
-lands in `%LOCALAPPDATA%\Programs\negadice` with a Start Menu entry, an optional
-desktop icon, and an uninstaller.
+lands in `%LOCALAPPDATA%\Programs\Sappari Sheet` with a Start Menu entry, an
+optional desktop icon, and an uninstaller.
 
 The script also copies `msvcp140.dll`, `vcruntime140.dll` and
-`vcruntime140_1.dll` in beside the executable. `negadice.exe` imports these, and
-they are absent on a Windows machine that has never had Visual Studio or a C++
-application — so shipping them app-local means **the end user installs no
-prerequisite**. Their location is discovered through `vswhere` rather than
-hardcoded, because the folder is named after the toolset (`Microsoft.VC145.CRT`
-on VS 2026, `Microsoft.VC143.CRT` on the VS 2022 that CI runs).
+`vcruntime140_1.dll` in beside the executable. `sappari_sheet.exe` imports
+these, and they are absent on a Windows machine that has never had Visual
+Studio or a C++ application — so shipping them app-local means **the end user
+installs no prerequisite**. Their location is discovered through `vswhere`
+rather than hardcoded, because the folder is named after the toolset
+(`Microsoft.VC145.CRT` on VS 2026, `Microsoft.VC143.CRT` on the VS 2022 that CI
+runs).
 
 Building the installer locally needs Inno Setup 6:
 
@@ -119,8 +109,8 @@ winget install JRSoftware.InnoSetup
 ```
 
 The script finds `ISCC.exe` whether that install was machine-wide or per-user.
-CI builds the installer on every run and uploads it as the `negadice-installer`
-artifact.
+CI builds the installer on every run and uploads it as the
+`sappari-sheet-installer` artifact.
 
 The installer is **unsigned**, so Windows SmartScreen shows an "unrecognized
 app" warning on first run until it accrues reputation. Only a code-signing

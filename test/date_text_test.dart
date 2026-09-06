@@ -1,7 +1,7 @@
 // Date masking and validation for the 日付 field.
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:negadice/core/date_text.dart';
+import 'package:sappari_sheet/core/date_text.dart';
 
 void main() {
   group('maskDate', () {

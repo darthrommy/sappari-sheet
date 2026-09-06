@@ -1,7 +1,5 @@
-name: negadice
-description: >-
-  Index sheet (contact sheet) generator for scanned film. One sheet, one roll.
-  Flutter desktop port of the Tauri original.
+name: sappari_sheet
+description: Generate Swiss-style contact sheet for digitized films
 publish_to: "none"
 version: 26.7.0+1
 

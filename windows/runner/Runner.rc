@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.negadice" "\0"
-            VALUE "FileDescription", "negadice" "\0"
+            VALUE "CompanyName", "Sappari Sheet" "\0"
+            VALUE "FileDescription", "Sappari Sheet" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "negadice" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.negadice. All rights reserved." "\0"
-            VALUE "OriginalFilename", "negadice.exe" "\0"
-            VALUE "ProductName", "negadice" "\0"
+            VALUE "InternalName", "sappari_sheet" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Sappari Sheet. All rights reserved." "\0"
+            VALUE "OriginalFilename", "sappari_sheet.exe" "\0"
+            VALUE "ProductName", "Sappari Sheet" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

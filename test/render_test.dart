@@ -11,10 +11,10 @@ import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
-import 'package:negadice/core/geometry.dart';
-import 'package:negadice/core/sheet_meta.dart';
-import 'package:negadice/render/sheet_renderer.dart';
-import 'package:negadice/render/text_metrics.dart';
+import 'package:sappari_sheet/core/geometry.dart';
+import 'package:sappari_sheet/core/sheet_meta.dart';
+import 'package:sappari_sheet/render/sheet_renderer.dart';
+import 'package:sappari_sheet/render/text_metrics.dart';
 
 import 'font_fixture.dart';
 

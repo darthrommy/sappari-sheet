@@ -68,13 +68,13 @@ jobs:
       - name: Upload build
         uses: actions/upload-artifact@v4
         with:
-          name: negadice-windows
+          name: sappari-sheet-windows
           path: build/windows/x64/runner/Release/
           if-no-files-found: error
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: negadice-installer
+          name: sappari-sheet-installer
           path: installer/Output/*.exe
           if-no-files-found: error

@@ -1,8 +1,6 @@
 /// The operation layer: the three entry points the UI calls, plus their DTOs
-/// and progress events.
-///
-/// Port of `negadice/src-tauri/src/commands.rs` — spec §6. All heavy work is
-/// delegated to the pure `render` functions.
+/// and progress events. All heavy work is delegated to the pure `render`
+/// functions.
 library;
 
 import 'dart:async';
@@ -15,8 +13,7 @@ import '../core/naming.dart';
 import '../core/sheet_meta.dart';
 import '../render/sheet_renderer.dart';
 
-/// Phases reported while analyzing or rendering. Mirrors the Rust `phase`
-/// string so the UI labels stay identical.
+/// Phases reported while analyzing or rendering.
 enum ProgressPhase { analyze, decode, compose, done }
 
 class Progress {

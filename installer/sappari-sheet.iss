@@ -1,4 +1,4 @@
-; Inno Setup script for negadice (Windows desktop).
+; Inno Setup script for Sappari Sheet (Windows desktop).
 ;
 ; Not meant to be compiled by hand — run installer\build-installer.ps1, which
 ; parses the version out of pubspec.yaml, stages the Visual C++ runtime DLLs
@@ -8,9 +8,9 @@
 ; no administrator rights, and {autopf} then resolves to
 ; %LOCALAPPDATA%\Programs rather than C:\Program Files.
 
-#define AppName "negadice"
-#define AppPublisher "negadice"
-#define AppExeName "negadice.exe"
+#define AppName "Sappari Sheet"
+#define AppPublisher "Sappari Sheet"
+#define AppExeName "sappari_sheet.exe"
 
 ; Supplied by build-installer.ps1; the fallbacks only exist so opening this
 ; file in the Inno IDE does not error out.
@@ -34,7 +34,7 @@ DefaultGroupName={#AppName}
 UninstallDisplayIcon={app}\{#AppExeName}
 UninstallDisplayName={#AppName} {#AppVersion}
 OutputDir=Output
-OutputBaseFilename=negadice-setup-{#AppVersion}
+OutputBaseFilename=sappari-sheet-setup-{#AppVersion}
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -53,9 +53,9 @@ Name: "japanese"; MessagesFile: "compiler:Languages\Japanese.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-; The whole Flutter release tree: negadice.exe, flutter_windows.dll, the plugin
-; DLLs, and data\ (app.so, icudtl.dat, flutter_assets\). The layout must be
-; preserved — the engine resolves data\ relative to the executable.
+; The whole Flutter release tree: sappari_sheet.exe, flutter_windows.dll, the
+; plugin DLLs, and data\ (app.so, icudtl.dat, flutter_assets\). The layout must
+; be preserved — the engine resolves data\ relative to the executable.
 ;
 ; build-installer.ps1 has already copied msvcp140.dll, vcruntime140.dll and
 ; vcruntime140_1.dll into this directory, so they are picked up by the wildcard.
