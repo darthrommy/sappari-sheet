@@ -8,25 +8,30 @@ app with the rendering core in Rust. The port reimplements that core natively in
 Dart rather than binding to it — see `docs/PORTING-SPEC.md` for the contract it
 holds to, and `docs/DEVIATIONS.md` for everywhere it departs from the original.
 
-Output is a fixed **3000 x 2100** landscape sheet in an International
-Typographic ("Swiss") layout: the roll name as a flush-left title, ruled
-`Date` / `Frames` / `Film` columns beside it, a rule closing the header, then a
-centred grid with each frame's number set below its cell.
+The sheet layout is a Figma design —
+[negadice-sheet](https://www.figma.com/design/QMS8aKf6lWRNeUhuXVirfR/negadice-sheet?node-id=1-2),
+one frame per format — transcribed into `lib/core/geometry.dart`. **The Figma
+is the source of truth**; if code and design disagree, the design wins.
 
-Cells take the **true aspect of the film format** rather than a division of the
-available space, so a 6x6 negative renders square.
+A dark sheet — `#151515` ground, `#F0F0F0` ink — **3000 wide, each format
+taking its own negative's proportions**: 35mm 3:2, 6x6 square, 6x7 a 6:7
+portrait. The header carries the roll name over a description line, with
+`Photographer` / `Date` / `Frames` / `Format` columns right-aligned beside it;
+its height is **whatever the grid leaves**, so the title type scales with it.
+Below, the grid runs **full bleed** to the sheet's edges with 2px gutters, each
+frame numbered in a box inside its bottom-left corner. Cells with no photograph
+are `#242424` blocks, so a sheet is always its format's full height.
 
-| Film mode     | Grid   | Frames | Aspect | Cell    |
-| ------------- | ------ | ------ | ------ | ------- |
-| `35mm ハーフ` | 12 x 6 | 72     | 3:4    | 174x232 |
-| `35mm`        | 7 x 6  | 42     | 3:2    | 348x232 |
-| `645`         | 4 x 4  | 16     | 1.35   | 497x368 |
-| `6×6`         | 4 x 3  | 12     | 1:1    | 504x504 |
-| `6×7`         | 4 x 3  | 12     | 5:4    | 630x504 |
+| Film mode     | Grid   | Frames | Cell                | Sheet       | Title |
+| ------------- | ------ | ------ | ------------------- | ----------- | ----- |
+| `35mm ハーフ` | 13 x 6 | 78     | 228.92 x 305.23     | 3000 x 2250 | 96    |
+| `35mm`        | 7 x 6  | 42     | 426.86 x 284.57     | 3000 x 2000 | 96    |
+| `645`         | 6 x 3  | 18     | 498.33 x 664.44     | 3000 x 2250 | 80    |
+| `6x6`         | 4 x 3  | 12     | 748.50 x 748.50     | 3000 x 3000 | 128   |
+| `6x7`         | 3 x 3  | 9      | 998.67 x 856.00     | 3000 x 3500 | 128   |
 
-The sheet design is a **deliberate fork** from the Tauri original's, which uses
-grid-derived cell sizes and paints frame numbers over the photographs. See
-`docs/DEVIATIONS.md` §0.
+Half-frame is the one exception to the negative-proportions rule: 18x24 would
+give a 3000x4000 sheet its grid could not fill, so its frame is 4:3.
 
 Frames are ordered by natural filename sort and can be rearranged by dragging.
 **EXIF is never read** — a frame's orientation is inferred from its pixel ratio
@@ -45,10 +50,12 @@ installer/    negadice.iss, build-installer.ps1 — Inno Setup packaging
 ```
 
 `core/` is deliberately Flutter-free and holds everything the spec tags
-**[EXACT]**: sheet constants, per-mode grids and cell arithmetic (all integer
-division), filename acceptance, natural ordering, sanitization, output paths.
-The naming tests are 1:1 translations of the Rust `#[cfg(test)]` assertions; the
-geometry tests pin this port's own forked layout instead.
+**[EXACT]**: the transcribed layout constants and cell arithmetic, filename
+acceptance, natural ordering, sanitization, output paths, date parsing. The
+naming tests are 1:1 translations of the Rust `#[cfg(test)]` assertions; the
+geometry tests check the design's own numbers, to a thousandth of a pixel —
+Figma stores coordinates as float32, so its reported values carry rounding that
+these doubles do not.
 
 ## Develop
 
@@ -122,12 +129,15 @@ certificate removes that.
 ## Fonts
 
 Bundles two families from Google Fonts, both under the SIL Open Font License
-1.1, both Regular and Bold:
+1.1:
 
-- **Google Sans Flex** — primary, carrying Latin, digits and punctuation.
+- **Google Sans Flex** — primary, carrying Latin, digits and punctuation. One
+  file per weight at 400, 500 and 600, the weights the design uses.
   See `assets/fonts/OFL-GoogleSansFlex.txt`.
-- **Noto Sans JP** — the fallback. Google Sans Flex has no CJK coverage, so a
-  Japanese roll name resolves through this. See `assets/fonts/OFL-NotoSansJP.txt`.
+- **Noto Sans JP** — the fallback, as a **variable** font: its weight is an axis
+  rather than a file, set through `fontVariations`. Google Sans Flex has no CJK
+  coverage, so Japanese resolves through this.
+  See `assets/fonts/OFL-NotoSansJP.txt`.
 
 Both are embedded, so there is no runtime font lookup and a sheet renders
 identically on every machine. A mixed run like `テストロール 2024` draws its

@@ -32,7 +32,7 @@ List<String> writeSources(Directory dir, int count) {
 /// The colour at the centre of cell [index] on a composed sheet.
 ///
 /// Cell origins are in full-sheet coordinates, so scale them for the half-size
-/// preview (1500x1050) rather than the full 3000x2100 export.
+/// preview rather than the full-size export.
 (int, int, int) cellCentre(img.Image sheet, FilmMode mode, int index) {
   final scale = sheet.width / sheetWidth;
   final (x, y) = mode.cellOrigin(index);
@@ -88,7 +88,14 @@ void main() {
     );
     final sheet = img.decodeJpg(bytes)!;
 
-    expect((sheet.width, sheet.height), (1500, 1050));
+    expect(sheet.width, 1500);
+    expect(
+      sheet.height,
+      (1500 * FilmMode.full35.sheetHeight / sheetWidth).round(),
+      reason:
+          'the preview is half the format'
+          's own sheet height',
+    );
     expect(
       service.cachedCellCount,
       3,
@@ -112,13 +119,16 @@ void main() {
     );
     final sheet = img.decodeJpg(File(out).readAsBytesSync())!;
 
-    expect((sheet.width, sheet.height), (sheetWidth, sheetHeight));
-    // Not the gray placeholder — the real frames came from the cache.
+    expect(
+      (sheet.width, sheet.height),
+      (sheetWidth.round(), FilmMode.full35.sheetHeight.round()),
+    );
+    // Not the blank block — the real frame came from the cache.
     final (r, g, b) = cellCentre(sheet, FilmMode.full35, 0);
     expect(
-      (r - 204).abs() < 12 && (g - 204).abs() < 12 && (b - 204).abs() < 12,
+      (r - 36).abs() < 12 && (g - 36).abs() < 12 && (b - 36).abs() < 12,
       isFalse,
-      reason: 'cell 0 should hold a decoded frame, not the placeholder',
+      reason: 'cell 0 should hold a decoded frame, not a blank block',
     );
   });
 

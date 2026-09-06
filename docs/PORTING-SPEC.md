@@ -34,74 +34,74 @@ original lacks. Match scope exactly.
 
 ---
 
-## 2. Sheet geometry  [EXACT]
+## 2. Sheet layout  [EXACT]
 
-Fixed landscape sheet: a title block on top, then a centred grid whose frame
-numbers sit below each cell.
+**The Figma file is the source of truth**, not this document — `negadice-sheet`,
+one frame per format, all sharing the `2:87` header component:
 
-```
-SHEET_WIDTH   = 3000      MARGIN        = 120
-SHEET_HEIGHT  = 2100      HEADER_H      = 240
-GUTTER        = 54        ROW_GAP       = 14
-NUMBER_BLOCK  = 26        NUMBER_BASELINE_OFFSET = 20
+| format | node | sheet | grid | capacity | cell | header | title/desc |
+|--------|------|-------|------|----------|------|--------|------------|
+| `half` | `4:143` | 3000 x 2250 | 13 x 6 | 78 | 228.9231 x 305.2308 | 408.6154 | 96 / 36 |
+| `35mm` | `1:2` | 3000 x 2000 | 7 x 6 | 42 | 426.8571 x 284.5714 | 282.5714 | 96 / 36 |
+| `645` | `2:88` | 3000 x 2250 | 6 x 3 | 18 | 498.3333 x 664.4444 | 252.6667 | 80 / 32 |
+| `66` | `2:228` | 3000 x 3000 | 4 x 3 | 12 | 748.5 x 748.5 | 750.5 | 128 / 48 |
+| `67` | `2:301` | 3000 x 3500 | 3 x 3 | 9 | 998.6667 x 856 | 928 | 128 / 48 |
 
-contentWidth  = 3000 - 2*120       = 2760
-contentHeight = 2100 - 2*120 - 240 = 1620
-```
+Each format's sheet takes the proportions of **its own negative** — 35mm 3:2,
+6x6 square, 6x7 a 6:7 portrait. Half-frame is the exception: 18x24 would give a
+3000x4000 sheet its grid could not fill, so its frame is 4:3 like 645's.
 
-### Film modes
+### Frame
 
-Cells take the **true aspect of the film format**, not a division of the
-available space.
-
-| id      | label (UI)    | cols | rows | capacity | aspect          | cell    |
-|---------|---------------|------|------|----------|-----------------|---------|
-| `half`  | `35mm ハーフ` | 12   | 6    | 72       | 18/24 = 0.750   | 174x232 |
-| `35mm`  | `35mm`        | 7    | 6    | 42       | 36/24 = 1.500   | 348x232 |
-| `645`   | `645`         | 4    | 4    | 16       | 56/41.5 = 1.349 | 497x368 |
-| `66`    | `6×6`         | 4    | 3    | 12       | 1.000           | 504x504 |
-| `67`    | `6×7`         | 4    | 3    | 12       | 70/56 = 1.250   | 630x504 |
-
-`half` is the only portrait format. An unknown mode id is an error:
-`unknown film mode: {id}`.
-
-### Cell sizing
-
-Take whichever constraint binds first, then keep the aspect exact:
+The sheet is **3000 wide with a per-format height**, and the header is
+**whatever the grid leaves above it** — from 252.67 for 645 to 928 for 6x7.
+The grid runs **full bleed**: no page padding, cells reach both edges, 2px
+gutters. The 100px padding is inside the header. There is **no rule** under it.
 
 ```
-heightLimitedCellHeight = (contentHeight - NUMBER_BLOCK*rows - ROW_GAP*(rows-1)) / rows
-widthLimitedCellWidth   = (contentWidth - GUTTER*(cols-1)) / cols
-
-cw = min(round(heightLimitedCellHeight * aspect), widthLimitedCellWidth)
-ch = cw derived back through the aspect
+cellWidth    (3000 - 2*(cols-1)) / cols
+cellHeight   cellWidth / aspect
+gridHeight   rows*cellHeight + 2*(rows-1)
+headerHeight sheetHeight - gridHeight
+gridTop      headerHeight
 ```
 
-All division truncates. Height binds for every current mode; for 35mm **both**
-bind at once, which is what lets 42 frames at 3:2 fit a 3000x2100 sheet at all.
+### Header (component `2:87`)
 
-### Placement
-
-The grid is **centred horizontally** and sits directly under the header:
+Both blocks are **vertically centred** in whatever height the header has. The
+metadata is a fixed 147 tall at every format; only the title and description
+scale.
 
 ```
-gridWidth = cols*cw + GUTTER*(cols-1)
-gridLeft  = (SHEET_WIDTH - gridWidth) / 2
-gridTop   = MARGIN + HEADER_H              = 360
-rowPitch  = ch + NUMBER_BLOCK + ROW_GAP
-
-x = gridLeft + col * (cw + GUTTER)
-y = gridTop  + row * rowPitch
-
-numberBaseline(i) = (x, y + ch + NUMBER_BASELINE_OFFSET)
+padding        100 either side
+title block    x=100, height = title + 12 + description, centred
+               width = 3000 - 200 - metaWidth - 50 (the metadata sizes first)
+metadata       h=147, centred, right-aligned to x=2900
+  label +25 into the block, value +82
+  padding 50 either side, 50 between columns
+  every column but the FIRST has a 2px left border
 ```
 
-**Invariants to unit-test for all five modes**: cell aspect equals the film
-aspect (within rounding); the grid is centred to within a pixel and never
-narrower than `MARGIN`; the last cell clears the right margin; the last
-**number baseline** — not the cell — clears the bottom margin at `y <= 1980`
-(every mode lands on 1972). For 35mm specifically, `gridWidth == contentWidth`
-and `gridLeft == MARGIN`.
+### Type
+
+Title and description sizes are **per format** (see the table). Tracking is
+proportional: title -3% of its size, description +1%. The gap between them is
+always 12.
+
+| role | size | weight | tracking |
+|------|------|--------|----------|
+| title | per format | 500 | -3% |
+| description | per format | 400 | +1% |
+| metadata label | 32 | 600 | -0.96 |
+| metadata value | 40 | 400 | 0 |
+| frame number | 32 | 500 | -0.96 |
+
+Ground `#151515`, ink `#F0F0F0`, blank cell `#242424`. Every text box is
+`line-height: 1`, so its height equals its font size and a box drawn at its
+top-left lands where the design puts it.
+
+Positions are **doubles**, because the design's are: 3000 across seven columns
+does not land on integers.
 
 ## 3. Rendering
 
@@ -129,38 +129,32 @@ Result is always exactly `cw × ch`.
    - `None` (unreadable/undecodable file) → fill the cell with gray `#CCCCCC`
    - then draw the frame number (§3.3) **below** the cell — drawn in both cases
 
-### 3.3 Frame number  [STRUCTURAL]
+### 3.3 Frame number  [EXACT]
 
-Set **below** the cell, flush with its left edge, baseline at
-`cellY + cellHeight + 20`, size 24, colour `#1A1A1A`. **Unpadded** — `1`, not
-`01`. Nothing is ever painted over the photograph.
+A box in the cell's **bottom-left corner** filled with the sheet's own ground
+colour, `px-12 py-8` around the **zero-padded** index (`01`, not `1`). Box
+height 48 (8 + 32 + 8); width is the text width plus 24. Drawn after the
+photograph, so it sits on top of it.
 
-### 3.4 Title block  [STRUCTURAL]
+### 3.4 Title block  [EXACT]
 
-```
-titlePx = 68 (bold)   metaLabelPx = 24 (bold)   metaValuePx = 34
-titleMaxWidth = 1000  titleFirstBaseline = 190
-columnsLeft = 1180    columnWidth = 300    columnSpacing = 40
-columnRuleInset = 20  columnRuleTop = 134  columnRuleBottom = 232
-columnRuleWidth = 2   headerRuleY = 328    headerRuleWidth = 3
-ink = #1A1A1A         ground = #FFFFFF
-```
+1. **Title** — the roll name at (100, 100), wrapped to 1519, one line,
+   ellipsized.
+2. **Description** — at (100, 240), same width, one line, ellipsized.
+3. **Metadata** — `Photographer` / `Date` / `Frames` / `Format`, in that order.
+   Column width is `max(label, value) + 100`, plus 2 for the border every
+   column but the first carries; the block is right-aligned to x=2900 with 50
+   between columns. `Frames` is the number of slots filled and `Format` the
+   mode label — both derived, never typed.
 
-1. **Title** — the roll name, flush left at `MARGIN`, wrapped within
-   `titleMaxWidth`, capped at 2 lines with an ellipsis, first baseline at
-   `titleFirstBaseline`. An **empty name falls back to the film format label**,
-   so the title is never blank.
-2. **Columns** — `Date`, `Frames`, `Film`, in that order. Column `i` starts at
-   `columnsLeft + i*(columnWidth + columnSpacing)`, with a `columnRuleWidth`
-   vertical rule `columnRuleInset` to its left spanning
-   `columnRuleTop..columnRuleBottom`. Caption baseline 168 in bold; value
-   baseline 214, clipped to `columnWidth` by §3.5. `Frames` is the number of
-   slots actually placed and `Film` the mode label — both derived, never typed.
-3. **Closing rule** — full content width at `headerRuleY`, `headerRuleWidth`
-   thick, in `ink`.
+No rule closes the header.
 
-Colour carries no hierarchy: one grey does title, captions, values, numbers and
-rules alike. Weight and size do the work.
+### 3.4b Blank cells  [EXACT]
+
+**Every** cell of the grid is drawn, so a sheet is always its format's full
+height. A slot with no photograph gets a `#242424` block. A slot whose file
+failed to decode gets the same block but **keeps its number**, since it still
+holds a place in the roll; slots past the last frame have no number.
 
 ### 3.5 clip_to_width  [EXACT]
 
@@ -192,10 +186,14 @@ downscale uses `Triangle` (bilinear) filtering, not Lanczos3.
 ## 4. Text rendering  [BEST-EFFORT; metrics EXACT where computable]
 
 Fonts: **Google Sans Flex** (primary) with **Noto Sans JP** (fallback), both
-from Google Fonts under SIL OFL 1.1, Regular + Bold each, all four embedded
-alongside `OFL-GoogleSansFlex.txt` and `OFL-NotoSansJP.txt`. Google Sans Flex
-carries no CJK, so Japanese resolves through Noto Sans JP. Embedding means no
-runtime font lookup and identical rendering on every machine.
+from Google Fonts under SIL OFL 1.1, both embedded alongside
+`OFL-GoogleSansFlex.txt` and `OFL-NotoSansJP.txt`.
+
+Google Sans Flex ships one file per weight — 400, 500 and 600, the weights the
+design uses. Noto Sans JP is the **variable** font, so its weight is an axis
+rather than a file; `fontVariations` sets `wght` explicitly, which is what makes
+a 600-weight Japanese label actually render at 600. Google Sans Flex carries no
+CJK, so Japanese resolves through the fallback.
 
 Required primitives (Rust uses `ab_glyph`):
 
@@ -311,6 +309,7 @@ Shell `#1a1a1a`, white text.
   - `フィルム` → select, options `{label}（最大{capacity}枚）`
   - `ロール名（シート表題に印字）` → single-line input,
     placeholder `Kodak Gold 200 など`
+  - `説明（表題の下に印字）` → single-line input, placeholder `ひとことメモ`
   - `日付` → single-line input, defaulting to today as `YYYY-MM-DD`
   - `ファイル名` → text input, placeholder `index_sheet`,
     hint `拡張子 .jpg は自動で追加されます`

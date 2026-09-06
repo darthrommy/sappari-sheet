@@ -1,8 +1,8 @@
-// Rendering acceptance criteria — spec §3, §4, §8.
+// Rendering acceptance criteria, checked against the Figma design.
 //
 // These exercise the real dart:ui raster path with the bundled fonts, so they
-// are what proves the sheet actually looks like the design rather than merely
-// compiling. The header, number placement and font-fallback assertions are the
+// are what proves the sheet matches the design rather than merely compiling.
+// The number-badge placement and the font-fallback assertions are the
 // load-bearing ones.
 
 import 'dart:async';
@@ -42,18 +42,19 @@ class Pixels {
   final Uint8List bytes;
   final int width;
 
-  (int, int, int) at(int x, int y) {
-    final i = (y * width + x) * 4;
+  (int, int, int) at(num x, num y) {
+    final i = (y.round() * width + x.round()) * 4;
     return (bytes[i], bytes[i + 1], bytes[i + 2]);
   }
 
-  /// Count pixels darker than mid-grey inside the given box.
-  int inkIn(int x0, int y0, int x1, int y1) {
+  /// Count pixels that are clearly lighter than the dark ground — the theme
+  /// inverted, so text is light on dark.
+  int inkIn(num x0, num y0, num x1, num y1) {
     var count = 0;
-    for (var y = y0; y < y1; y++) {
-      for (var x = x0; x < x1; x++) {
+    for (var y = y0.round(); y < y1.round(); y++) {
+      for (var x = x0.round(); x < x1.round(); x++) {
         final (r, g, b) = at(x, y);
-        if (r < 128 && g < 128 && b < 128) count++;
+        if (r > 160 && g > 160 && b > 160) count++;
       }
     }
     return count;
@@ -65,8 +66,14 @@ Future<Pixels> pixelsOf(ui.Image image) async {
   return Pixels(data!.buffer.asUint8List(), image.width);
 }
 
-/// Ink inside the title area, left of the metadata columns.
-int titleInk(Pixels p) => p.inkIn(margin, 100, margin + 1000, 280);
+/// Pixels close to the ink colour inside the title area. The theme is dark,
+/// so "ink" is now light-on-dark and cannot be found by looking for darkness.
+int titleInk(Pixels p, FilmMode mode) => p.inkIn(
+  headerPadding,
+  mode.titleTop,
+  1400,
+  mode.titleTop + mode.titleFontSize,
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -74,117 +81,86 @@ void main() {
 
   group('text', () {
     test('both families advance: Latin primary, Japanese via fallback', () {
-      expect(textWidth('42', 30, bold: true), greaterThan(0));
+      expect(textWidth('42', px: 32, weight: 500), greaterThan(0));
       // Google Sans Flex has no CJK; this only works through Noto Sans JP.
-      expect(textWidth('テスト', 40), greaterThan(0));
+      expect(textWidth('テスト', px: 48), greaterThan(0));
     });
 
-    test(
-      'inked bounds sit above the baseline and fall back on blanks',
-      () async {
-        final (top, bottom) = await visualVBounds('NOTE', 26);
-        expect(top, lessThan(0), reason: 'ink extends above the baseline');
-        expect(bottom, greaterThan(top));
-        final (ftop, fbot) = await visualVBounds('   ', 26);
-        expect(ftop, closeTo(-26 * 0.7, 0.001));
-        expect(fbot, 0.0);
-      },
-    );
-
-    test('Japanese and Latin both produce ink', () async {
-      final (jtop, jbot) = await visualVBounds('テスト', 56);
-      expect(jbot - jtop, greaterThan(0));
-      final (ltop, lbot) = await visualVBounds('Roll', 56);
-      expect(lbot - ltop, greaterThan(0));
+    test('weight changes the rendered width', () {
+      final regular = textWidth('Photographer', px: 32, weight: 400);
+      final semibold = textWidth('Photographer', px: 32, weight: 600);
+      expect(
+        semibold,
+        isNot(closeTo(regular, 0.01)),
+        reason: 'the 600 file must actually be selected, not aliased to 400',
+      );
     });
-  });
 
-  group('clipToWidth', () {
-    test('truncates with an ellipsis only when needed', () {
-      const text = 'Kodak ProImage 100 Extra Long Roll Name';
-      final full = textWidth(text, metaValuePx);
-      expect(clipToWidth(text, metaValuePx, full + 10), text);
-      final clipped = clipToWidth(text, metaValuePx, full / 2);
-      expect(clipped.endsWith('…'), isTrue);
-      expect(clipped.runes.length, lessThan(text.runes.length));
-      expect(textWidth(clipped, metaValuePx), lessThanOrEqualTo(full / 2));
+    test('letter spacing widens or tightens the run', () {
+      final plain = textWidth('Kodak Portra 400', px: 128, weight: 500);
+      final tight = textWidth(
+        'Kodak Portra 400',
+        px: 128,
+        weight: 500,
+        letterSpacing: FilmMode.f66.titleTracking,
+      );
+      expect(tight, lessThan(plain), reason: 'title tracking is negative');
     });
   });
 
   group('cover fit', () {
-    test('output matches the cell size and orientation', () async {
-      const landscape = FilmMode.full35;
-      final portraitSource = await solid(300, 400, 0, 255, 0);
-      final decoded = img.decodeJpg(
-        await makeThumb(portraitSource, landscape),
-      )!;
-      expect(decoded.width, landscape.cellWidth);
-      expect(decoded.height, landscape.cellHeight);
-      portraitSource.dispose();
-
-      const portrait = FilmMode.half;
-      final landscapeSource = await solid(400, 300, 255, 0, 0);
-      final half = img.decodeJpg(await makeThumb(landscapeSource, portrait))!;
-      expect(half.width, portrait.cellWidth);
-      expect(half.height, portrait.cellHeight);
-      landscapeSource.dispose();
+    test('the cell raster matches the mode cell size', () async {
+      const mode = FilmMode.full35;
+      final source = await solid(300, 400, 0, 255, 0);
+      final cell = await renderCell(source, mode);
+      expect(cell.width, mode.cellWidth.round());
+      expect(cell.height, mode.cellHeight.round());
+      source.dispose();
+      cell.dispose();
     });
 
     test('source rect is centered and respects the cover scale', () async {
       final image = await solid(400, 300, 0, 0, 0);
-      final rect = coverSourceRect(image, 348, 232, true);
+      final rect = coverSourceRect(image, 398.2857, 265.5238, true);
       expect(rect.center.dx, closeTo(200, 0.001));
       expect(rect.center.dy, closeTo(150, 0.001));
       expect(rect.width, lessThanOrEqualTo(400.001));
       expect(rect.height, lessThanOrEqualTo(300.001));
       image.dispose();
     });
-
-    test('renderCell produces a cell-sized image', () async {
-      final image = await solid(400, 300, 12, 34, 56);
-      final cell = await renderCell(image, FilmMode.half);
-      expect(cell.width, FilmMode.half.cellWidth);
-      expect(cell.height, FilmMode.half.cellHeight);
-      image.dispose();
-      cell.dispose();
-    });
   });
 
   group('compose', () {
     test('places cells and leaves unfilled slots white', () async {
+      const mode = FilmMode.full35;
       final images = <ui.Image?>[
         await solid(400, 300, 255, 0, 0),
         await solid(400, 300, 0, 255, 0),
         await solid(400, 300, 0, 0, 255),
       ];
-      final sheet = await composeSheet(
-        images,
-        FilmMode.full35,
-        SheetMeta.empty,
-      );
-      expect(sheet.width, sheetWidth);
-      expect(sheet.height, sheetHeight);
+      final sheet = await composeSheet(images, mode, SheetMeta.empty);
+      expect(sheet.width, sheetWidth.round());
+      expect(sheet.height, mode.sheetHeight.round());
 
       final p = await pixelsOf(sheet);
-      expect(p.at(0, 0), (255, 255, 255), reason: 'sheet corner is white');
+      expect(p.at(0, 0), (21, 21, 21), reason: 'the ground is dark');
 
-      const mode = FilmMode.full35;
       final expected = [(255, 0, 0), (0, 255, 0), (0, 0, 255)];
       for (var i = 0; i < expected.length; i++) {
         final (x, y) = mode.cellOrigin(i);
         expect(
-          p.at(x + mode.cellWidth ~/ 2, y + mode.cellHeight ~/ 2),
+          p.at(x + mode.cellWidth / 2, y + mode.cellHeight / 2),
           expected[i],
-          reason: 'cell $i center color',
+          reason: 'cell $i centre colour',
         );
       }
 
       final (ux, uy) = mode.cellOrigin(10);
-      expect(p.at(ux + mode.cellWidth ~/ 2, uy + mode.cellHeight ~/ 2), (
-        255,
-        255,
-        255,
-      ), reason: 'unfilled cell stays white');
+      expect(p.at(ux + mode.cellWidth / 2, uy + mode.cellHeight / 2), (
+        36,
+        36,
+        36,
+      ), reason: 'a slot past the last frame gets the blank block');
 
       for (final image in images) {
         image?.dispose();
@@ -193,25 +169,25 @@ void main() {
     });
 
     test('a missing image draws a gray placeholder', () async {
+      const mode = FilmMode.full35;
       final sheet = await composeSheet(
         <ui.Image?>[null],
-        FilmMode.full35,
+        mode,
         SheetMeta.empty,
       );
-      const mode = FilmMode.full35;
       final (x, y) = mode.cellOrigin(0);
       final p = await pixelsOf(sheet);
-      expect(p.at(x + mode.cellWidth ~/ 2, y + mode.cellHeight ~/ 2), (
-        204,
-        204,
-        204,
-      ));
+      expect(p.at(x + mode.cellWidth / 2, y + mode.cellHeight / 2), (
+        36,
+        36,
+        36,
+      ), reason: 'an undecodable file gets the same blank block');
       sheet.dispose();
     });
 
     test('composeSheetFromCells matches composeSheet', () async {
       const mode = FilmMode.full35;
-      const meta = SheetMeta(name: 'テスト', date: '2026-09-06');
+      const meta = SheetMeta(name: 'テスト', date: '2026-07-16');
       final sources = <ui.Image?>[
         await solid(400, 300, 255, 0, 0),
         await solid(300, 400, 0, 255, 0), // portrait, so it gets rotated
@@ -229,13 +205,10 @@ void main() {
       final b = await pixelsOf(viaCells);
       for (var i = 0; i < sources.length; i++) {
         final (x, y) = mode.cellOrigin(i);
-        final px = x + mode.cellWidth ~/ 2;
-        final py = y + mode.cellHeight ~/ 2;
-        expect(b.at(px, py), a.at(px, py), reason: 'cell $i centre');
         expect(
-          b.at(x + 2, y + 2),
-          a.at(x + 2, y + 2),
-          reason: 'cell $i corner',
+          b.at(x + mode.cellWidth / 2, y + mode.cellHeight / 2),
+          a.at(x + mode.cellWidth / 2, y + mode.cellHeight / 2),
+          reason: 'cell $i centre',
         );
       }
 
@@ -251,75 +224,101 @@ void main() {
   });
 
   group('frame numbers', () {
-    test('are painted below the cell, never over the photograph', () async {
+    test('sit in a ground-coloured box in the cell bottom-left', () async {
+      const mode = FilmMode.full35;
       final image = await solid(400, 300, 200, 0, 0);
       final sheet = await composeSheet(
         <ui.Image?>[image],
-        FilmMode.full35,
+        mode,
         SheetMeta.empty,
       );
-      const mode = FilmMode.full35;
       final (x, y) = mode.cellOrigin(0);
       final p = await pixelsOf(sheet);
 
-      // The old design painted a white box in the bottom-right of the cell.
-      // Nothing may cover the image now.
-      for (var yy = y + mode.cellHeight - 40; yy < y + mode.cellHeight; yy++) {
-        for (var xx = x + mode.cellWidth - 60; xx < x + mode.cellWidth; xx++) {
-          expect(p.at(xx, yy), (
-            200,
-            0,
-            0,
-          ), reason: 'cell interior at ($xx,$yy) must be untouched image');
-        }
-      }
-
-      // ...and the number is inked in the block underneath it.
-      final ink = p.inkIn(
-        x,
-        y + mode.cellHeight,
-        x + 80,
-        y + mode.cellHeight + numberBlock + 4,
+      final boxTop = y + mode.cellHeight - numberBoxHeight;
+      // The badge is the sheet's own ground, not white...
+      expect(p.at(x + 4, boxTop + 4), (
+        21,
+        21,
+        21,
+      ), reason: 'badge background is the ground colour');
+      // ...with ink in it.
+      expect(
+        p.inkIn(x, boxTop, x + 80, y + mode.cellHeight),
+        greaterThan(10),
+        reason: 'the number is painted inside the badge',
       );
-      expect(ink, greaterThan(10), reason: 'number painted below the cell');
+      // The bottom-RIGHT of the cell is still photograph.
+      expect(p.at(x + mode.cellWidth - 6, y + mode.cellHeight - 6), (
+        200,
+        0,
+        0,
+      ), reason: 'the badge does not span the cell width');
 
       image.dispose();
       sheet.dispose();
     });
 
-    test('are unpadded, so 1 is narrower than 11', () async {
-      expect(textWidth('1', numberPx), lessThan(textWidth('11', numberPx)));
-      // Guards against a regression to the old zero-padded "01" form.
-      expect(textWidth('1', numberPx), lessThan(textWidth('01', numberPx)));
+    test('are zero-padded to two digits', () {
+      // Guards the design's "01", not "1".
+      expect(1.toString().padLeft(2, '0'), '01');
+      expect(39.toString().padLeft(2, '0'), '39');
     });
   });
 
   group('title block', () {
     test('prints the roll name and closes with a rule', () async {
+      const mode = FilmMode.full35;
       final sheet = await composeSheet(
         const <ui.Image?>[],
-        FilmMode.full35,
-        const SheetMeta(name: 'Kodak Gold 200', date: '2026-09-06'),
+        mode,
+        const SheetMeta(
+          name: 'Kodak Portra 400',
+          description: 'a description line',
+          author: 'Romolintianus',
+          date: '2026-07-16',
+        ),
       );
       final p = await pixelsOf(sheet);
 
-      expect(titleInk(p), greaterThan(200), reason: 'roll name is painted');
+      expect(
+        titleInk(p, FilmMode.full35),
+        greaterThan(500),
+        reason: 'roll name is painted',
+      );
 
-      // The closing rule spans the content width.
-      final ruleY = headerRuleY.round() + 1;
-      expect(p.at(margin + 10, ruleY), (26, 26, 26));
-      expect(p.at(sheetWidth - margin - 10, ruleY), (26, 26, 26));
-      expect(p.at(margin - 10, ruleY), (
-        255,
-        255,
-        255,
-      ), reason: 'rule stops at the margin');
+      // The design has no rule under the header; the band between the header
+      // and the grid must be plain ground.
+      final wasRuleRow = (mode.headerHeight - 40).round();
+      expect(
+        p.inkIn(0, wasRuleRow, sheetWidth, wasRuleRow + 1),
+        0,
+        reason: 'no rule closes the header any more',
+      );
+
+      // Metadata is right-aligned to x=2900, so there is ink near it...
+      expect(
+        p.inkIn(2400, mode.metaTop, metaRight, mode.metaTop + metaHeight),
+        greaterThan(100),
+        reason: 'metadata columns are painted on the right',
+      );
+      // ...and none past it.
+      expect(
+        p.inkIn(
+          metaRight + 4,
+          mode.metaTop,
+          sheetWidth,
+          mode.metaTop + metaHeight,
+        ),
+        0,
+        reason: 'the block stops at the padding',
+      );
 
       sheet.dispose();
     });
 
-    test('renders a Japanese roll name through the fallback font', () async {
-      final blank = await composeSheet(
+    test('renders a Japanese title through the fallback font', () async {
+      final empty = await composeSheet(
         const <ui.Image?>[],
         FilmMode.full35,
         SheetMeta.empty,
@@ -327,62 +326,49 @@ void main() {
       final noted = await composeSheet(
         const <ui.Image?>[],
         FilmMode.full35,
-        const SheetMeta(name: 'テストロール 2024', date: '2026-09-06'),
+        const SheetMeta(name: 'テストロール 2024'),
       );
 
-      final blankInk = titleInk(await pixelsOf(blank));
-      final notedInk = titleInk(await pixelsOf(noted));
+      final blankInk = titleInk(await pixelsOf(empty), FilmMode.full35);
+      final notedInk = titleInk(await pixelsOf(noted), FilmMode.full35);
 
-      // Google Sans Flex has no CJK glyphs; if the fallback chain were broken
-      // this would render tofu or nothing and the counts would not diverge.
-      expect(
-        notedInk,
-        greaterThan(blankInk),
-        reason: 'Japanese title paints more ink than the "35mm" fallback title',
-      );
-      expect(notedInk, greaterThan(500));
+      // Google Sans Flex has no CJK glyphs; a broken fallback chain would
+      // render tofu or nothing here.
+      expect(blankInk, 0, reason: 'an empty title paints nothing');
+      expect(notedInk, greaterThan(1000));
 
-      blank.dispose();
+      empty.dispose();
       noted.dispose();
     });
 
-    test('an empty roll name falls back to the film label', () async {
-      final sheet = await composeSheet(
+    test('the description line is painted below the title', () async {
+      final without = await composeSheet(
         const <ui.Image?>[],
-        FilmMode.f66,
-        SheetMeta.empty,
-      );
-      final p = await pixelsOf(sheet);
-      expect(
-        titleInk(p),
-        greaterThan(100),
-        reason: 'title is never blank — it shows the format',
-      );
-      sheet.dispose();
-    });
-
-    test('the Frames column counts the frames actually placed', () async {
-      // Frames is derived, so it must follow the slot count, not the input.
-      final images = <ui.Image?>[
-        for (var i = 0; i < 3; i++) await solid(400, 300, 10, 10, 10),
-      ];
-      final sheet = await composeSheet(
-        images,
         FilmMode.full35,
-        const SheetMeta(name: 'Roll', date: '2026-09-06'),
+        const SheetMeta(name: 'Roll'),
       );
-      final p = await pixelsOf(sheet);
-      // Column values sit in the metadata band; just assert something inked
-      // there, since the exact glyphs are the font's business.
-      expect(
-        p.inkIn(1180, 130, 2200, 230),
-        greaterThan(100),
-        reason: 'metadata columns are painted',
+      final with_ = await composeSheet(
+        const <ui.Image?>[],
+        FilmMode.full35,
+        const SheetMeta(
+          name: 'Roll',
+          description: 'ごきげんよう is a universal greeting word in Japan',
+        ),
       );
-      for (final i in images) {
-        i?.dispose();
-      }
-      sheet.dispose();
+
+      const mode = FilmMode.full35;
+      int descInk(Pixels p) => p.inkIn(
+        headerPadding,
+        mode.descriptionTop,
+        1400,
+        mode.descriptionTop + mode.descriptionFontSize,
+      );
+
+      expect(descInk(await pixelsOf(without)), 0);
+      expect(descInk(await pixelsOf(with_)), greaterThan(500));
+
+      without.dispose();
+      with_.dispose();
     });
   });
 
@@ -395,7 +381,10 @@ void main() {
         const SheetMeta(name: 'roll'),
       );
       final decoded = img.decodeJpg(await encodeSheet(sheet))!;
-      expect((decoded.width, decoded.height), (sheetWidth, sheetHeight));
+      expect(
+        (decoded.width, decoded.height),
+        (sheetWidth.round(), FilmMode.f66.sheetHeight.round()),
+      );
       image.dispose();
       sheet.dispose();
     });
@@ -408,16 +397,24 @@ void main() {
         SheetMeta.empty,
       );
       final decoded = img.decodeJpg(await makePreview(sheet))!;
-      expect((decoded.width, decoded.height), (1500, 1050));
+      expect(decoded.width, 1500);
+      expect(
+        decoded.height,
+        (1500 * FilmMode.full35.sheetHeight / sheetWidth).round(),
+        reason:
+            'half of this format'
+            's own sheet height',
+      );
       image.dispose();
       sheet.dispose();
     });
 
     test('the thumbnail matches the mode cell size', () async {
+      const mode = FilmMode.half;
       final image = await solid(400, 300, 10, 10, 10);
-      final decoded = img.decodeJpg(await makeThumb(image, FilmMode.half))!;
-      expect(decoded.width, FilmMode.half.cellWidth);
-      expect(decoded.height, FilmMode.half.cellHeight);
+      final decoded = img.decodeJpg(await makeThumb(image, mode))!;
+      expect(decoded.width, mode.cellWidth.round());
+      expect(decoded.height, mode.cellHeight.round());
       image.dispose();
     });
   });

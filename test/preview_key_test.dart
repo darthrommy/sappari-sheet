@@ -51,6 +51,13 @@ void main() {
     );
   });
 
+  test('the description is part of the key', () {
+    expect(
+      previewKey([a], mode, const SheetMeta(description: 'One')),
+      isNot(previewKey([a], mode, const SheetMeta(description: 'Two'))),
+    );
+  });
+
   test('the photographer is part of the key', () {
     expect(
       previewKey([a], mode, const SheetMeta(author: 'One')),
@@ -78,11 +85,29 @@ void main() {
   // well — closing the footgun at both ends. Both are asserted here so neither
   // can quietly regress.
   test('SheetMeta distinguishes values by equality and by toString', () {
-    const one = SheetMeta(name: 'One', author: 'A', date: '2026-01-01');
-    const two = SheetMeta(name: 'Two', author: 'B', date: '2026-12-31');
+    const one = SheetMeta(
+      name: 'One',
+      description: 'D1',
+      author: 'A',
+      date: '2026-01-01',
+    );
+    const two = SheetMeta(
+      name: 'Two',
+      description: 'D2',
+      author: 'B',
+      date: '2026-12-31',
+    );
 
     expect(one, isNot(two), reason: 'value equality distinguishes them');
-    expect(one, SheetMeta(name: 'One', author: 'A', date: '2026-01-01'));
+    expect(
+      one,
+      const SheetMeta(
+        name: 'One',
+        description: 'D1',
+        author: 'A',
+        date: '2026-01-01',
+      ),
+    );
 
     expect(
       '$one',

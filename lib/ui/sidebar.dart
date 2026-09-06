@@ -19,6 +19,7 @@ class AppSidebar extends StatelessWidget {
     required this.mode,
     required this.onModeChange,
     required this.rollNameController,
+    required this.descriptionController,
     required this.authorController,
     required this.dateController,
     required this.fileNameController,
@@ -33,6 +34,7 @@ class AppSidebar extends StatelessWidget {
   final FilmMode mode;
   final ValueChanged<FilmMode> onModeChange;
   final TextEditingController rollNameController;
+  final TextEditingController descriptionController;
   final TextEditingController authorController;
   final TextEditingController dateController;
   final TextEditingController fileNameController;
@@ -84,6 +86,23 @@ class AppSidebar extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  // Format leads: it sets the capacity every later step is
+                  // measured against, and the sheet's whole shape follows from
+                  // it. Pick the film, then the photos, then describe them.
+                  const _SectionLabel('フィルム'),
+                  const SizedBox(height: 12),
+                  _ModeSelect(mode: mode, onChanged: onModeChange),
+                  const SizedBox(height: 12),
+                  Text(
+                    '最大 ${mode.capacity} 枚',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Palette.textMuted,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  const Divider(height: 1, color: Palette.border),
+                  const SizedBox(height: 20),
                   const _SectionLabel('ソースファイル'),
                   const SizedBox(height: 12),
                   _OutlineButton(
@@ -106,16 +125,16 @@ class AppSidebar extends StatelessWidget {
                   const SizedBox(height: 20),
                   const _SectionLabel('シート設定'),
                   const SizedBox(height: 16),
-                  const _FieldLabel('フィルム'),
-                  const SizedBox(height: 6),
-                  _ModeSelect(mode: mode, onChanged: onModeChange),
-                  const SizedBox(height: 16),
                   const _FieldLabel('ロール名（シート表題に印字）'),
                   const SizedBox(height: 6),
                   _TextField(
                     controller: rollNameController,
                     hint: 'Kodak Gold 200 など',
                   ),
+                  const SizedBox(height: 16),
+                  const _FieldLabel('説明（表題の下に印字）'),
+                  const SizedBox(height: 6),
+                  _TextField(controller: descriptionController, hint: 'ひとことメモ'),
                   const SizedBox(height: 16),
                   const _FieldLabel('撮影者'),
                   const SizedBox(height: 6),

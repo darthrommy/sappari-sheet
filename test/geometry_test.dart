@@ -1,25 +1,94 @@
-// Grid arithmetic — spec §2, tier [EXACT].
+// Grid arithmetic, checked against the Figma design.
 //
-// These pin the Swiss layout's numbers. Cells take their real film aspect and
-// frame numbers sit below each cell, so both the dimensions and the origin
-// arithmetic differ deliberately from the Tauri original; see
-// `docs/DEVIATIONS.md`.
+// Expected values are read from the design's frames — 4:143 (half), 1:2 (35mm),
+// 2:88 (645), 2:228 (6x6), 2:301 (6x7) — and their header instances. Figma
+// stores coordinates as float32, so its reported numbers carry rounding these
+// doubles do not; comparisons allow a thousandth of a pixel.
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:negadice/core/geometry.dart';
 
+const double eps = 0.001;
+
+/// What each frame measures, straight off the design.
+typedef Frame = ({
+  int cols,
+  int rows,
+  double sheetHeight,
+  double cellWidth,
+  double cellHeight,
+  double headerHeight,
+  double titleTop,
+  double metaTop,
+  double titleFontSize,
+});
+
+const Map<String, Frame> designed = {
+  'half': (
+    cols: 13,
+    rows: 6,
+    sheetHeight: 2250,
+    cellWidth: 228.9231,
+    cellHeight: 305.2308,
+    headerHeight: 408.6154,
+    titleTop: 132.3077,
+    metaTop: 130.8077,
+    titleFontSize: 96,
+  ),
+  '35mm': (
+    cols: 7,
+    rows: 6,
+    sheetHeight: 2000,
+    cellWidth: 426.8571,
+    cellHeight: 284.5714,
+    headerHeight: 282.5714,
+    titleTop: 69.2857,
+    metaTop: 67.7857,
+    titleFontSize: 96,
+  ),
+  '645': (
+    cols: 6,
+    rows: 3,
+    sheetHeight: 2250,
+    cellWidth: 498.3333,
+    cellHeight: 664.4444,
+    headerHeight: 252.6667,
+    titleTop: 64.3333,
+    metaTop: 52.8333,
+    titleFontSize: 80,
+  ),
+  '66': (
+    cols: 4,
+    rows: 3,
+    sheetHeight: 3000,
+    cellWidth: 748.5,
+    cellHeight: 748.5,
+    headerHeight: 750.5,
+    titleTop: 281.25,
+    metaTop: 301.75,
+    titleFontSize: 128,
+  ),
+  '67': (
+    cols: 3,
+    rows: 3,
+    sheetHeight: 3500,
+    cellWidth: 998.6667,
+    cellHeight: 856,
+    headerHeight: 928,
+    titleTop: 370,
+    metaTop: 390.5,
+    titleFontSize: 128,
+  ),
+};
+
 void main() {
-  group('film mode parsing and orientation', () {
+  group('film mode parsing', () {
     test('parses known ids and rejects unknown ones', () {
       expect(FilmMode.parse('35mm'), FilmMode.full35);
       expect(FilmMode.parse('half'), FilmMode.half);
       expect(FilmMode.parse('645'), FilmMode.f645);
       expect(FilmMode.parse('66'), FilmMode.f66);
       expect(FilmMode.parse('67'), FilmMode.f67);
-      expect(() => FilmMode.parse('nope'), throwsFormatException);
-    });
-
-    test('unknown mode message matches the Rust original', () {
       expect(
         () => FilmMode.parse('nope'),
         throwsA(
@@ -32,134 +101,164 @@ void main() {
       );
     });
 
-    test('half is the only portrait format', () {
+    test('half-frame and 645 are the portrait formats', () {
       expect(FilmMode.half.cellLandscape, isFalse);
+      expect(FilmMode.f645.cellLandscape, isFalse);
       expect(FilmMode.full35.cellLandscape, isTrue);
-      // 6x6 is square, which counts as landscape for the rotation rule.
-      expect(FilmMode.f66.cellLandscape, isTrue);
+      expect(FilmMode.f66.cellLandscape, isTrue, reason: 'square counts');
+      expect(FilmMode.f67.cellLandscape, isTrue);
     });
   });
 
-  group('grid geometry', () {
-    test('capacities match the spec table', () {
-      expect(FilmMode.half.capacity, 72);
+  group('every format matches its frame', () {
+    test('grid, cell and sheet', () {
+      for (final mode in FilmMode.values) {
+        final w = designed[mode.id]!;
+        expect((mode.cols, mode.rows), (w.cols, w.rows), reason: mode.id);
+        expect(mode.sheetHeight, w.sheetHeight, reason: mode.id);
+        expect(mode.cellWidth, closeTo(w.cellWidth, eps), reason: mode.id);
+        expect(mode.cellHeight, closeTo(w.cellHeight, eps), reason: mode.id);
+      }
+    });
+
+    test('the header is whatever the grid leaves', () {
+      for (final mode in FilmMode.values) {
+        final w = designed[mode.id]!;
+        expect(
+          mode.headerHeight,
+          closeTo(w.headerHeight, eps),
+          reason: mode.id,
+        );
+        expect(
+          mode.headerHeight + mode.gridHeight,
+          closeTo(mode.sheetHeight, eps),
+          reason: '${mode.id}: header plus grid is the whole sheet',
+        );
+      }
+    });
+
+    test('both header blocks are vertically centred', () {
+      for (final mode in FilmMode.values) {
+        final w = designed[mode.id]!;
+        expect(mode.titleTop, closeTo(w.titleTop, eps), reason: mode.id);
+        expect(mode.metaTop, closeTo(w.metaTop, eps), reason: mode.id);
+      }
+    });
+
+    test('the title scales per format, the metadata does not', () {
+      for (final mode in FilmMode.values) {
+        final w = designed[mode.id]!;
+        expect(mode.titleFontSize, w.titleFontSize, reason: mode.id);
+      }
+      // 645's short header takes the smallest type, 6x6 and 6x7 the largest.
+      expect(FilmMode.f645.titleFontSize, 80);
+      expect(FilmMode.full35.titleFontSize, 96);
+      expect(FilmMode.f66.titleFontSize, 128);
+      // The metadata block is identical everywhere.
+      expect(metaHeight, 147);
+      expect(metaLabelFontSize, 32);
+      expect(metaValueFontSize, 40);
+    });
+
+    test('capacities', () {
+      expect(FilmMode.half.capacity, 78);
       expect(FilmMode.full35.capacity, 42);
-      expect(FilmMode.f645.capacity, 16);
+      expect(FilmMode.f645.capacity, 18);
       expect(FilmMode.f66.capacity, 12);
-      expect(FilmMode.f67.capacity, 12);
+      expect(FilmMode.f67.capacity, 9);
+    });
+  });
+
+  group('type', () {
+    test('tracking is proportional to size', () {
+      // -3% on the title, +1% on the description.
+      expect(FilmMode.f66.titleTracking, closeTo(-3.84, eps));
+      expect(FilmMode.full35.titleTracking, closeTo(-2.88, eps));
+      expect(FilmMode.f645.titleTracking, closeTo(-2.4, eps));
+      expect(FilmMode.f66.descriptionTracking, closeTo(0.48, eps));
+      expect(FilmMode.f645.descriptionTracking, closeTo(0.32, eps));
     });
 
-    test('cell dimensions match the spec table exactly', () {
-      expect((FilmMode.half.cellWidth, FilmMode.half.cellHeight), (174, 232));
-      expect(
-        (FilmMode.full35.cellWidth, FilmMode.full35.cellHeight),
-        (348, 232),
-      );
-      expect((FilmMode.f645.cellWidth, FilmMode.f645.cellHeight), (497, 368));
-      expect((FilmMode.f66.cellWidth, FilmMode.f66.cellHeight), (504, 504));
-      expect((FilmMode.f67.cellWidth, FilmMode.f67.cellHeight), (630, 504));
-    });
-
-    test('every cell renders at its true film aspect', () {
+    test('the title block is title, a 12 gap, then the description', () {
       for (final mode in FilmMode.values) {
-        final actual = mode.cellWidth / mode.cellHeight;
         expect(
-          actual,
-          closeTo(mode.aspect, 0.005),
-          reason: '${mode.id}: cell aspect should be the film aspect',
+          mode.titleBlockHeight,
+          mode.titleFontSize + 12 + mode.descriptionFontSize,
+          reason: mode.id,
+        );
+        expect(
+          mode.descriptionTop - mode.titleTop,
+          closeTo(mode.titleFontSize + titleDescriptionGap, eps),
+          reason: mode.id,
         );
       }
-      // 6x6 is genuinely square, not merely close.
-      expect(FilmMode.f66.cellWidth, FilmMode.f66.cellHeight);
     });
 
-    test('every mode grid fits inside the sheet', () {
-      for (final mode in FilmMode.values) {
-        expect(mode.cellWidth, greaterThan(0), reason: '${mode.id}: width');
-        expect(mode.cellHeight, greaterThan(0), reason: '${mode.id}: height');
+    test('the number badge is the same at every format', () {
+      expect((numberFontSize, numberWeight, numberTracking), (32, 500, -0.96));
+      expect((numberPadX, numberPadY), (12, 8));
+      expect(numberBoxHeight, 48, reason: '8 + 32 + 8');
+    });
 
+    test('the dark palette', () {
+      expect(groundValue, 0xFF151515);
+      expect(inkValue, 0xFFF0F0F0);
+      expect(blankValue, 0xFF242424);
+    });
+  });
+
+  group('full-bleed grid', () {
+    test('cells span the whole sheet width', () {
+      for (final mode in FilmMode.values) {
+        expect(
+          mode.cols * mode.cellWidth + gridGap * (mode.cols - 1),
+          closeTo(sheetWidth, eps),
+          reason: '${mode.id}: no page padding, cells reach both edges',
+        );
+      }
+    });
+
+    test('the first cell sits at the sheet edge, under the header', () {
+      for (final mode in FilmMode.values) {
+        final (x, y) = mode.cellOrigin(0);
+        expect(x, 0, reason: mode.id);
+        expect(y, mode.headerHeight, reason: mode.id);
+      }
+    });
+
+    test('the last cell ends on the sheet edges', () {
+      for (final mode in FilmMode.values) {
         final (x, y) = mode.cellOrigin(mode.capacity - 1);
+        expect(x + mode.cellWidth, closeTo(sheetWidth, eps), reason: mode.id);
         expect(
-          x + mode.cellWidth,
-          lessThanOrEqualTo(sheetWidth - margin),
-          reason: '${mode.id}: last cell within right margin',
-        );
-        expect(
-          y,
-          greaterThanOrEqualTo(margin + headerH),
-          reason: '${mode.id}: grid starts below the header',
-        );
-
-        // The number sits below the cell, so it is the number — not the cell —
-        // that has to clear the bottom margin.
-        final (_, baseline) = mode.numberBaseline(mode.capacity - 1);
-        expect(
-          baseline,
-          lessThanOrEqualTo(sheetHeight - margin),
-          reason: '${mode.id}: last frame number within bottom margin',
+          y + mode.cellHeight,
+          closeTo(mode.sheetHeight, eps),
+          reason: mode.id,
         );
       }
     });
 
-    test('the grid is centred horizontally', () {
-      for (final mode in FilmMode.values) {
-        final leftGap = mode.gridLeft;
-        final rightGap = sheetWidth - (mode.gridLeft + mode.gridWidth);
-        expect(
-          (leftGap - rightGap).abs(),
-          lessThanOrEqualTo(1),
-          reason: '${mode.id}: equal margins either side (rounding aside)',
-        );
-        expect(
-          leftGap,
-          greaterThanOrEqualTo(margin),
-          reason: '${mode.id}: never narrower than the page margin',
-        );
-      }
-    });
-
-    test('35mm fills the content width exactly', () {
-      // Both constraints bind at once for 35mm, which is what makes 42 frames
-      // at 3:2 fit a 3000x2100 sheet at all.
-      expect(FilmMode.full35.gridWidth, contentWidth);
-      expect(FilmMode.full35.gridLeft, margin);
-    });
-
-    test('cell origin advances by cell size plus gutter', () {
+    test('cell origins step by cell size plus a 2px gutter', () {
+      expect(gridGap, 2);
       const mode = FilmMode.full35;
-      expect(mode.cellOrigin(0), (mode.gridLeft, margin + headerH));
-      expect(mode.cellOrigin(1), (
-        mode.gridLeft + mode.cellWidth + gutter,
-        margin + headerH,
-      ));
-      // Index 7 wraps to the second row (7 columns), one row pitch down.
-      expect(mode.cellOrigin(7), (
-        mode.gridLeft,
-        margin + headerH + mode.rowPitch,
-      ));
+      final (x0, y0) = mode.cellOrigin(0);
+      final (x1, _) = mode.cellOrigin(1);
+      expect(x1 - x0, closeTo(mode.cellWidth + gridGap, eps));
+      // Index 7 wraps to the second row of seven columns.
+      final (x7, y7) = mode.cellOrigin(7);
+      expect(x7, closeTo(x0, eps));
+      expect(y7 - y0, closeTo(mode.cellHeight + gridGap, eps));
     });
 
-    test('row pitch leaves room for the number under each cell', () {
+    test('cells keep their format aspect', () {
       for (final mode in FilmMode.values) {
-        expect(mode.rowPitch, mode.cellHeight + numberBlock + rowGap);
-        final (_, y) = mode.cellOrigin(0);
-        final (_, baseline) = mode.numberBaseline(0);
         expect(
-          baseline,
-          greaterThan(y + mode.cellHeight),
-          reason: '${mode.id}: the number sits below the cell, never over it',
+          mode.cellWidth / mode.cellHeight,
+          closeTo(mode.aspect, eps),
+          reason: mode.id,
         );
-        expect(baseline - (y + mode.cellHeight), numberBaselineOffset);
       }
-    });
-
-    test('the frame number is flush with its cell', () {
-      const mode = FilmMode.full35;
-      for (final i in [0, 1, 7, 41]) {
-        final (cx, _) = mode.cellOrigin(i);
-        final (nx, _) = mode.numberBaseline(i);
-        expect(nx, cx, reason: 'number $i is left-aligned to its cell');
-      }
+      expect(FilmMode.f66.cellWidth, closeTo(FilmMode.f66.cellHeight, eps));
     });
   });
 }

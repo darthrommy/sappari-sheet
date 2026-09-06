@@ -79,11 +79,10 @@ class _PreviewPaneState extends State<PreviewPane>
                   letterSpacing: 1.2,
                 ),
               ),
-              const Text(
-                'JPEG - $sheetWidth'
-                'x'
-                '$sheetHeight',
-                style: TextStyle(
+              Text(
+                // Sheet height is per-format now, so this cannot be const.
+                'JPEG - ${sheetWidth.round()}x${mode.sheetHeight.round()}',
+                style: const TextStyle(
                   fontSize: 11,
                   color: Palette.textFaint,
                   letterSpacing: 1.2,

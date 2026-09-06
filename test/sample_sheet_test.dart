@@ -59,16 +59,17 @@ void main() {
       images,
       FilmMode.full35,
       const SheetMeta(
-        name: 'テストロール 2024',
+        name: 'Kodak Portra 400',
+        description: 'ごきげんよう is a universal greeting word in Japan',
         author: 'Romolintianus',
-        date: '2026-09-06',
+        date: '2026-07-16',
       ),
     );
     final jpeg = await encodeSheet(sheet);
 
     final decoded = img.decodeJpg(jpeg)!;
-    expect(decoded.width, sheetWidth);
-    expect(decoded.height, sheetHeight);
+    expect(decoded.width, sheetWidth.round());
+    expect(decoded.height, FilmMode.full35.sheetHeight.round());
 
     final outDir = Directory('build/samples')..createSync(recursive: true);
     File('${outDir.path}/sheet_35mm.jpg').writeAsBytesSync(jpeg);

@@ -35,19 +35,19 @@ flutter:
     - assets/fonts/
 
   fonts:
-    # Google Sans Flex (SIL OFL 1.1) carries Latin; Noto Sans JP (SIL OFL 1.1)
-    # is the fallback that supplies CJK. Both are embedded, so there is no
-    # runtime font lookup and a sheet renders identically on every machine.
-    # See assets/fonts/OFL-*.txt.
+    # Weights the Figma design calls for: 400 (description, metadata values),
+    # 500 (title, frame numbers), 600 (metadata labels). Google Sans Flex ships
+    # one file per weight; Noto Sans JP is the variable font, so its weight is
+    # an axis rather than a file — see fontVariations in render/text_metrics.
+    # Both SIL OFL 1.1; see assets/fonts/OFL-*.txt.
     - family: Google Sans Flex
       fonts:
         - asset: assets/fonts/GoogleSansFlex-Regular.ttf
           weight: 400
-        - asset: assets/fonts/GoogleSansFlex-Bold.ttf
-          weight: 700
+        - asset: assets/fonts/GoogleSansFlex-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/GoogleSansFlex-SemiBold.ttf
+          weight: 600
     - family: Noto Sans JP
       fonts:
-        - asset: assets/fonts/NotoSansJP-Regular.ttf
-          weight: 400
-        - asset: assets/fonts/NotoSansJP-Bold.ttf
-          weight: 700
+        - asset: assets/fonts/NotoSansJP-VariableFont_wght.ttf

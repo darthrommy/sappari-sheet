@@ -24,6 +24,7 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   final SheetService _service = SheetService();
   final TextEditingController _rollName = TextEditingController();
+  final TextEditingController _description = TextEditingController();
   final TextEditingController _author = TextEditingController();
   final TextEditingController _date = TextEditingController(
     text: SheetMeta.today(),
@@ -33,8 +34,12 @@ class _AppShellState extends State<AppShell> {
   );
 
   /// What the sheet's title block prints, read straight off the fields.
-  SheetMeta get _meta =>
-      SheetMeta(name: _rollName.text, author: _author.text, date: _date.text);
+  SheetMeta get _meta => SheetMeta(
+    name: _rollName.text,
+    description: _description.text,
+    author: _author.text,
+    date: _date.text,
+  );
 
   StreamSubscription<Progress>? _progressSub;
 
@@ -53,6 +58,7 @@ class _AppShellState extends State<AppShell> {
       setState(() => _progress = p.phase == ProgressPhase.done ? null : p);
     });
     _rollName.addListener(() => setState(() {}));
+    _description.addListener(() => setState(() {}));
     _author.addListener(() => setState(() {}));
     _date.addListener(() => setState(() {}));
   }
@@ -62,6 +68,7 @@ class _AppShellState extends State<AppShell> {
     _progressSub?.cancel();
     _service.dispose();
     _rollName.dispose();
+    _description.dispose();
     _author.dispose();
     _date.dispose();
     _fileName.dispose();
@@ -146,8 +153,9 @@ class _AppShellState extends State<AppShell> {
       );
       _toast('書き出しが完了しました');
       setState(() => _frames = const []);
-      // Only the roll name is per-roll; photographer and date carry over.
+      // Roll name and description are per-roll; photographer and date carry over.
       _rollName.clear();
+      _description.clear();
     } on Object catch (err) {
       _toast('書き出しに失敗しました: $err', error: true);
     } finally {
@@ -179,6 +187,7 @@ class _AppShellState extends State<AppShell> {
               mode: _mode,
               onModeChange: (m) => unawaited(_changeMode(m)),
               rollNameController: _rollName,
+              descriptionController: _description,
               authorController: _author,
               dateController: _date,
               fileNameController: _fileName,

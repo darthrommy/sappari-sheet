@@ -9,52 +9,41 @@ unit tests; the remaining items are **[BEST-EFFORT]** or **[STRUCTURAL]**.
 
 ---
 
-## 0. The sheet design is forked, not ported — [DELIBERATE]
+## 0. The sheet design is the Figma file, not the Tauri original — [DELIBERATE]
 
-**Original:** a 140px band carrying a bordered "NOTE" field with the memo, then
-a grid whose cells are pure division of the available space (35mm at 380x272,
-an aspect of 1.40), each frame's number painted *over* its bottom-right corner
-on a 92%-opaque white box.
+**Original:** a fixed 3000x2100 white sheet, a 140px band with a bordered
+"NOTE" memo, cells sized by dividing the available space, frame numbers over
+each photograph's bottom-right corner.
 
-**Here:** an International Typographic layout. The roll name is a large
-flush-left title, with ruled `Date` / `Frames` / `Film` columns beside it and a
-3px rule closing a 240px header. Cells take their **true film aspect** — 35mm is
-genuinely 3:2, 6x6 genuinely square — and frame numbers are set *below* each
-cell, unpadded (`1`, not `01`), so nothing is ever painted over a photograph.
-The grid is centred, so formats that do not fill the content box get symmetric
-margins rather than oversized gutters.
+**Here:** the layout in `negadice-sheet`, one frame per format. A dark sheet
+(`#151515` ground, `#F0F0F0` ink) 3000 wide, each format taking **its own
+negative's proportions** — 35mm 3:2, 6x6 square, 6x7 a 6:7 portrait. The header
+is whatever the grid leaves above it, so it ranges from 252.67 to 928 and the
+title type scales with it. Below it a **full-bleed** grid with 2px gutters
+whose numbers sit in ground-coloured boxes inside each cell. Empty cells are
+`#242424` blocks.
 
-**Why:** requested. Sheets get shared, so the roll's identity should lead and
-the photographs should be unobscured.
+**Why:** requested, and designed by the user rather than derived from the Rust.
+`docs/PORTING-SPEC.md` §2 and §3.3/§3.4 transcribe it; the Figma wins if they
+disagree.
 
-**Consequence:** the two apps produce visibly different sheets from the same
-roll, and this is intended. `negadice` itself is untouched. Capacities are
-unchanged, so no roll that fitted one sheet now fails to. Frames are smaller
-than before (35mm went from 380x272 to 348x232) because the below-cell numbers
-and the taller header both cost vertical space. The single free-text `memo`
-became a structured `SheetMeta { name, date }`; `Frames` and `Film` are derived
-and never typed.
+**Consequence:** the two apps produce entirely different sheets, intentionally.
+`negadice` itself is untouched. **Capacities changed** with the new grids —
+half-frame 72 to 78, 645 16 to 18, 6x6 12 to 12 via 5x3 then 4x3, 6x7 12 to 9 —
+so a roll that fitted a 6x7 sheet before may not now. There is no longer one
+output size: 35mm is 3000x2000, 6x7 is 3000x3500. The `memo` string became
+`SheetMeta { name, description, author, date }`. Geometry is double-precision,
+because the design's own positions are fractional.
 
 ---
 
-## 0b. Fonts — [DELIBERATE]
+## 0a. Undecodable files share the blank block — [STRUCTURAL]
 
-**Original:** UDEV Gothic 35JPDOC (Regular + Bold), one family covering both
-Latin and CJK.
-
-**Here:** **Google Sans Flex** primary with **Noto Sans JP** as the fallback,
-both from Google Fonts, both SIL OFL 1.1, both embedded. Google Sans Flex has no
-CJK coverage, so a Japanese roll name resolves through Noto Sans JP — a mixed
-run like `テストロール 2024` draws its digits from the primary and its kana from
-the fallback.
-
-`dart:ui`'s `ParagraphStyle` has no `fontFamilyFallback`; only `TextStyle` does,
-so the chain is set on the pushed style, which is what shaping actually uses.
-
-**Consequence:** assets grew from 7.7 MB to ~10.9 MB. `test/font_fixture.dart`
-registers *both* families deliberately — loading only the primary would let
-Japanese fall through to the test harness's placeholder font and hide a broken
-fallback chain.
+The design has one empty state, `#242424`, for a cell with no photograph. The
+app also has to represent a file that failed to decode, which the design does
+not cover. Both use that block; the failed one keeps its frame number, so it is
+distinguishable in context from the trailing empties, and the reorder grid
+still shows it as a broken thumbnail.
 
 ---
 
