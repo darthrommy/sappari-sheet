@@ -1,8 +1,7 @@
 name: sappari_sheet
 description: Generate Swiss-style contact sheet for digitized films
 publish_to: "none"
-version: 26.7.0+1
-
+version: 26.9.0+1
 environment:
   sdk: ^3.13.2
 
