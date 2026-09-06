@@ -1,0 +1,232 @@
+name: Release
+
+# Cutting a release is a single manual action: open the Actions tab, pick this
+# workflow, and click "Run workflow". No inputs — the version is derived from
+# today's date as YY.MONTH.PATCH (CalVer), where PATCH counts releases already
+# made this month. The two-digit year keeps the major component <= 255, which
+# Windows MSI/installer tooling requires of every version part.
+#
+# The build runs BEFORE anything is committed or tagged: `prepare` only computes
+# the version, `build` injects it into pubspec.yaml locally (never committed) and
+# compiles each platform, and `publish` runs only if every build succeeded — it
+# is the single place that touches main, the tag, and the release. So a failed
+# build leaves no commit, no tag, and nothing to clean up.
+
+on:
+  workflow_dispatch:
+
+# Don't allow two releases to run at once (they'd race on the version + tag).
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: 3.47.2
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need full tag history to compute the next patch number
+
+      - name: Compute CalVer version
+        id: version
+        run: |
+          YEAR=$(date -u +%y)   # two digits: installer tooling caps each component at 255
+          MONTH=$(date -u +%-m) # no leading zero, so it stays a valid dotted version
+          PREFIX="v${YEAR}.${MONTH}."
+          # Highest existing patch for this month, +1 (robust against deleted tags).
+          LAST=$(git tag -l "${PREFIX}*" | sed "s|^${PREFIX}||" | sort -n | tail -1)
+          if [ -z "$LAST" ]; then PATCH=0; else PATCH=$((LAST + 1)); fi
+          VERSION="${YEAR}.${MONTH}.${PATCH}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing v$VERSION"
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            os: windows
+          - platform: macos-latest
+            os: macos
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Rewrites the single `version:` line in pubspec.yaml. Not committed — the
+      # build sees it, but main stays untouched until `publish`. The build-number
+      # suffix (`+N`) is left alone; only the dotted version is replaced.
+      - name: Inject version into pubspec.yaml
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os, re, pathlib
+          v = os.environ["VERSION"]
+          p = pathlib.Path("pubspec.yaml")
+          text = p.read_text()
+          new, n = re.subn(
+              r"(?m)^version:\s*[0-9][0-9.]*(?:\+\d+)?\s*$",
+              f"version: {v}+1",
+              text,
+              count=1,
+          )
+          if n != 1:
+              raise SystemExit("Could not find a version: line in pubspec.yaml")
+          p.write_text(new)
+          print(f"pubspec.yaml -> version: {v}+1")
+          PY
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # ----- Windows ---------------------------------------------------------
+      - name: Build (Windows, release)
+        if: matrix.os == 'windows'
+        run: flutter build windows --release
+
+      # The runner image normally ships Inno Setup; install it if a future
+      # image drops it rather than failing the run over a missing tool.
+      - name: Ensure Inno Setup
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup -y --no-progress
+          }
+
+      # Stages the VC++ runtime DLLs beside the exe, then compiles the setup
+      # program. Runs before the folder is zipped so the plain build carries
+      # those DLLs too and is runnable on a clean machine.
+      - name: Build installer
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: .\installer\build-installer.ps1
+
+      - name: Package Windows portable build
+        if: matrix.os == 'windows'
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          New-Item -ItemType Directory -Path release-artifacts -Force | Out-Null
+          Compress-Archive `
+            -Path build\windows\x64\runner\Release\* `
+            -DestinationPath "release-artifacts\sappari-sheet-windows-$env:VERSION.zip" `
+            -Force
+          Copy-Item installer\Output\*.exe release-artifacts\
+
+      # ----- macOS -----------------------------------------------------------
+      - name: Build (macOS, release)
+        if: matrix.os == 'macos'
+        run: flutter build macos --release
+
+      # Locate the built .app (its bundle name comes from Xcode, not pubspec)
+      # and package it as a zip that preserves symlinks and permissions —
+      # `ditto` is the Apple-blessed tool for that on macOS.
+      - name: Package macOS .app
+        if: matrix.os == 'macos'
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-artifacts
+          app=$(find build/macos/Build/Products/Release -maxdepth 1 -name '*.app' -print -quit)
+          if [[ -z "$app" ]]; then
+            echo "No .app bundle found under build/macos/Build/Products/Release" >&2
+            exit 1
+          fi
+          echo "Found $app"
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$app" "release-artifacts/sappari-sheet-macos-$VERSION.zip"
+
+      # ----- Upload ----------------------------------------------------------
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.os }}
+          path: release-artifacts/*
+          if-no-files-found: error
+
+  publish:
+    needs: [prepare, build] # only reached if every build job succeeded
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # commit the bump, push the tag, create the release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bump version on main
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          python - <<'PY'
+          import os, re, pathlib
+          v = os.environ["VERSION"]
+          p = pathlib.Path("pubspec.yaml")
+          text = p.read_text()
+          new, n = re.subn(
+              r"(?m)^version:\s*[0-9][0-9.]*(?:\+\d+)?\s*$",
+              f"version: {v}+1",
+              text,
+              count=1,
+          )
+          if n != 1:
+              raise SystemExit("Could not find a version: line in pubspec.yaml")
+          p.write_text(new)
+          PY
+
+      - name: Commit and push the bump
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "release $VERSION"
+          # Retry once if main moved while we were building.
+          git push origin "HEAD:$BRANCH" || {
+            git pull --rebase origin "$BRANCH"
+            git push origin "HEAD:$BRANCH"
+          }
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+
+      - name: List staged files
+        run: ls -lh dist
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          gh release create "$TAG" \
+            --draft \
+            --target "$(git rev-parse HEAD)" \
+            --title "Sappari Sheet $TAG" \
+            --notes "Automated draft — edit these notes before publishing." \
+            dist/*
