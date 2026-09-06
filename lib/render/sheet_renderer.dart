@@ -1,7 +1,8 @@
-/// Cell fitting and full-sheet composition: cover-fit cropping, frame-number
-/// labels, the memo header, JPEG encoding, and preview thumbnails.
+/// Cell fitting and full-sheet composition: cover-fit cropping, the Swiss
+/// title block, frame numbers, JPEG encoding, and preview thumbnails.
 ///
-/// Port of `negadice/src-tauri/src/render.rs` — spec §3.
+/// Spec §3. Cover-fit follows the Rust original; the sheet's design does not —
+/// see `docs/DEVIATIONS.md` for the deliberate fork.
 ///
 /// Composition runs through `dart:ui`: a [ui.PictureRecorder] plus [ui.Canvas],
 /// rasterized with `Picture.toImage`, then JPEG-encoded by `package:image`.
@@ -16,6 +17,7 @@ import 'dart:ui' as ui;
 import 'package:image/image.dart' as img;
 
 import '../core/geometry.dart';
+import '../core/sheet_meta.dart';
 import 'text_metrics.dart';
 
 const int outputQuality = 92;
@@ -32,25 +34,45 @@ const double sheetHeightF = sheetHeight * 1.0;
 const double previewWidthF = previewWidth * 1.0;
 const double previewHeightF = previewHeight * 1.0;
 
-const double labelPx = 30.0;
-const double memoPx = 56.0;
+/// Frame number set below each cell.
+const double numberPx = 24.0;
 
-/// The "NOTE" caption.
-const double memoCapPx = 26.0;
+/// Roll name — the sheet's title.
+const double titlePx = 68.0;
 
-/// Fixed field height.
-const double memoBoxH = 96.0;
+/// Column captions ("Date", "Frames", "Film").
+const double metaLabelPx = 24.0;
 
-/// Inner left/right padding for the value.
-const double memoPadX = 22.0;
-const double memoBorder = 3.0;
+/// Column values.
+const double metaValuePx = 34.0;
 
-const ui.Color memoInk = ui.Color(0xFF3C3C3C);
-const ui.Color memoValueInk = ui.Color(0xFF1E1E1E);
+/// Width the title wraps within, before the first metadata column.
+const double titleMaxWidth = 1000.0;
+
+/// Left edge of the first metadata column.
+const double columnsLeft = 1180.0;
+const double columnWidth = 300.0;
+const double columnSpacing = 40.0;
+
+/// How far left of a column the divider rule sits.
+const double columnRuleInset = 20.0;
+
+const double titleFirstBaseline = 190.0;
+const double metaLabelBaseline = 168.0;
+const double metaValueBaseline = 214.0;
+const double columnRuleTop = 134.0;
+const double columnRuleBottom = 232.0;
+const double columnRuleWidth = 2.0;
+
+/// The rule closing the title block, set above the grid.
+const double headerRuleY = margin + headerH - 32.0;
+const double headerRuleWidth = 3.0;
+
+/// A single near-black grey carries the title, captions, values, numbers and
+/// rules — the layout gets its hierarchy from weight and size, not colour.
+const ui.Color ink = ui.Color(0xFF1A1A1A);
 const ui.Color white = ui.Color(0xFFFFFFFF);
-const ui.Color black = ui.Color(0xFF000000);
 const ui.Color placeholderGray = ui.Color(0xFFCCCCCC);
-const ui.Color hairline = ui.Color(0xFFD2D2D2);
 
 /// Source rectangle on [image] that, drawn into a [cw] x [ch] cell, reproduces
 /// the Rust scale-then-center-crop.
@@ -127,119 +149,118 @@ void drawCoverCell(
   canvas.restore();
 }
 
-/// Frame-number label, bottom-right of the cell. Spec §3.3.
-Future<void> drawLabel(
-  ui.Canvas canvas,
-  int frameNum,
-  int cx,
-  int cy,
-  int cw,
-  int ch,
-) async {
-  final text = frameNum.toString().padLeft(2, '0');
-  final textW = textWidth(text, labelPx, bold: true).ceilToDouble();
-  final textH = lineHeight(text, labelPx, bold: true).ceilToDouble();
-  const pad = 6.0;
-  final boxW = textW + pad * 2;
-  final boxH = textH + pad * 2;
-  final bx = cx + cw - boxW - 4;
-  final by = cy + ch - boxH - 4;
-
-  // Semi-transparent white background (0.92 alpha) blended over the image.
-  canvas.drawRect(
-    ui.Rect.fromLTWH(bx, by, boxW, boxH),
-    ui.Paint()..color = const ui.Color(0xEBFFFFFF), // 0.92 * 255 = 234.6 -> 235
-  );
-
-  final a = ascent(text, labelPx, bold: true);
+/// Frame number, set below the cell and flush with its left edge. Spec §3.3.
+///
+/// Unpadded — `1`, not `01` — and never painted over the photograph, so no
+/// frame is obscured by its own number.
+void drawNumber(ui.Canvas canvas, int frameNum, int x, int baselineY) {
   drawTextAtBaseline(
     canvas,
-    text,
-    labelPx,
-    bx + pad,
-    by + pad + a,
-    black,
-    bold: true,
+    frameNum.toString(),
+    numberPx,
+    x.toDouble(),
+    baselineY.toDouble(),
+    ink,
   );
 }
 
-/// Memo header: the hairline, and when a memo is present the fixed "NOTE"
-/// field. Spec §3.4.
-Future<void> drawMemo(ui.Canvas canvas, String memoRaw) async {
-  // Hairline under the header band to set the memo area apart from the grid.
-  // Drawn even when the memo is empty.
-  const lineY = margin + headerH - 1;
+/// One metadata column: a small bold caption over its value.
+void _drawColumn(ui.Canvas canvas, int index, String label, String value) {
+  final left = columnsLeft + index * (columnWidth + columnSpacing);
+
+  // Divider rule to the column's left, as tall as the caption/value block.
+  canvas.drawRect(
+    ui.Rect.fromLTWH(
+      left - columnRuleInset,
+      columnRuleTop,
+      columnRuleWidth,
+      columnRuleBottom - columnRuleTop,
+    ),
+    ui.Paint()..color = ink,
+  );
+
+  drawTextAtBaseline(
+    canvas,
+    label,
+    metaLabelPx,
+    left,
+    metaLabelBaseline,
+    ink,
+    bold: true,
+  );
+  drawTextAtBaseline(
+    canvas,
+    clipToWidth(value, metaValuePx, columnWidth),
+    metaValuePx,
+    left,
+    metaValueBaseline,
+    ink,
+  );
+}
+
+/// Title block: the roll name as a large flush-left title, the ruled
+/// Date / Frames / Film columns beside it, and the rule that closes the header
+/// above the grid. Spec §3.4.
+///
+/// [frameCount] and [mode] are derived, never typed. An empty roll name falls
+/// back to the film format's label so the title is never blank.
+void drawHeader(
+  ui.Canvas canvas,
+  SheetMeta meta,
+  FilmMode mode,
+  int frameCount,
+) {
+  final name = meta.name.trim();
+  final title = name.isEmpty ? mode.label : name;
+
+  final paragraph = layoutWrapped(
+    title,
+    titlePx,
+    titleMaxWidth,
+    bold: true,
+    color: ink,
+  );
+  // layoutWrapped positions by the box top; place it so the first line's
+  // baseline lands on titleFirstBaseline.
+  canvas.drawParagraph(
+    paragraph,
+    ui.Offset(
+      margin.toDouble(),
+      titleFirstBaseline - paragraph.alphabeticBaseline,
+    ),
+  );
+  paragraph.dispose();
+
+  // Photographer leads, as Customer does in a lab index sheet; the derived
+  // values follow. Four columns run x=1180..2500, leaving the right edge open.
+  _drawColumn(canvas, 0, 'Photographer', meta.author.trim());
+  _drawColumn(canvas, 1, 'Date', meta.date.trim());
+  _drawColumn(canvas, 2, 'Frames', frameCount.toString());
+  _drawColumn(canvas, 3, 'Film', mode.label);
+
   canvas.drawRect(
     ui.Rect.fromLTWH(
       margin.toDouble(),
-      lineY.toDouble(),
+      headerRuleY,
       (sheetWidth - margin * 2).toDouble(),
-      1,
+      headerRuleWidth,
     ),
-    ui.Paint()..color = hairline,
+    ui.Paint()..color = ink,
   );
-
-  final memo = memoRaw.trim();
-  if (memo.isEmpty) return;
-
-  // Fixed-size "NOTE" field: a frame of constant width (half the content area)
-  // and height, with the caption riding on the top border and the value clipped
-  // to fit and centered by its actual glyph extent.
-  const double boxX = margin * 1.0;
-  const boxY = margin + (headerH - memoBoxH) / 2;
-  const boxW = (sheetWidth - margin * 2) / 2;
-
-  // Border: outline only, interior untouched.
-  canvas.drawRect(
-    ui.Rect.fromLTWH(
-      boxX + memoBorder / 2,
-      boxY + memoBorder / 2,
-      boxW - memoBorder,
-      memoBoxH - memoBorder,
-    ),
-    ui.Paint()
-      ..style = ui.PaintingStyle.stroke
-      ..strokeWidth = memoBorder
-      ..color = memoInk,
-  );
-
-  // Value: clipped to the inner width, left-aligned, optically centered.
-  final value = clipToWidth(memo, memoPx, boxW - memoPadX * 2);
-  final (vtop, vbot) = await visualVBounds(value, memoPx);
-  final valueBaseline = boxY + memoBoxH / 2 - (vtop + vbot) / 2;
-  drawTextAtBaseline(
-    canvas,
-    value,
-    memoPx,
-    boxX + memoPadX,
-    valueBaseline,
-    memoValueInk,
-  );
-
-  // "NOTE" caption straddling the top border: white it out, then draw.
-  const cap = 'NOTE';
-  final capW = textWidth(cap, memoCapPx);
-  final capX = boxX + 16.0;
-  final (ctop, cbot) = await visualVBounds(cap, memoCapPx);
-  final notchX0 = math.max(capX - 8.0, 0.0);
-  final notchX1 = math.min(capX + capW + 8.0, sheetWidth.toDouble());
-  final notchY0 = math.max(boxY + ctop - 2.0, 0.0);
-  final notchY1 = math.min(boxY + cbot + 4.0, sheetHeight.toDouble());
-  canvas.drawRect(
-    ui.Rect.fromLTRB(notchX0, notchY0, notchX1, notchY1),
-    ui.Paint()..color = white,
-  );
-  final capBaseline = boxY - (ctop + cbot) / 2;
-  drawTextAtBaseline(canvas, cap, memoCapPx, capX, capBaseline, memoInk);
 }
 
-/// Compose the full index sheet for [mode]. A null entry in [images] renders a
-/// gray placeholder (a file that could not be read/decoded). Spec §3.2.
-Future<ui.Image> composeSheet(
-  List<ui.Image?> images,
+/// The sheet body shared by [composeSheet] and [composeSheetFromCells]: white
+/// ground, title block, then [slotCount] cells each with its number below.
+///
+/// [drawSlot] paints the frame at slot `i` whose cell origin is ([x], [y]); it
+/// is not called for null slots, which get the gray placeholder instead.
+Future<ui.Image> _composeWith(
+  int slotCount,
   FilmMode mode,
-  String memo,
-) async {
+  SheetMeta meta, {
+  required bool Function(int i) hasFrame,
+  required void Function(ui.Canvas canvas, int i, int x, int y) drawSlot,
+}) async {
   final cw = mode.cellWidth;
   final ch = mode.cellHeight;
   final recorder = ui.PictureRecorder();
@@ -252,14 +273,14 @@ Future<ui.Image> composeSheet(
     const ui.Rect.fromLTWH(0, 0, sheetWidthF, sheetHeightF),
     ui.Paint()..color = white,
   );
-  await drawMemo(canvas, memo);
 
-  final count = math.min(images.length, mode.capacity);
+  final count = math.min(slotCount, mode.capacity);
+  drawHeader(canvas, meta, mode, count);
+
   for (var i = 0; i < count; i++) {
     final (x, y) = mode.cellOrigin(i);
-    final slot = images[i];
-    if (slot != null) {
-      drawCoverCell(canvas, slot, x, y, cw, ch, mode.cellLandscape);
+    if (hasFrame(i)) {
+      drawSlot(canvas, i, x, y);
     } else {
       canvas.drawRect(
         ui.Rect.fromLTWH(
@@ -271,7 +292,8 @@ Future<ui.Image> composeSheet(
         ui.Paint()..color = placeholderGray,
       );
     }
-    await drawLabel(canvas, i + 1, x, y, cw, ch);
+    final (nx, ny) = mode.numberBaseline(i);
+    drawNumber(canvas, i + 1, nx, ny);
   }
 
   final picture = recorder.endRecording();
@@ -279,6 +301,49 @@ Future<ui.Image> composeSheet(
   picture.dispose();
   return sheet;
 }
+
+/// Compose the full index sheet for [mode]. A null entry in [images] renders a
+/// gray placeholder (a file that could not be read/decoded). Spec §3.2.
+Future<ui.Image> composeSheet(
+  List<ui.Image?> images,
+  FilmMode mode,
+  SheetMeta meta,
+) => _composeWith(
+  images.length,
+  mode,
+  meta,
+  hasFrame: (i) => images[i] != null,
+  drawSlot: (canvas, i, x, y) => drawCoverCell(
+    canvas,
+    images[i]!,
+    x,
+    y,
+    mode.cellWidth,
+    mode.cellHeight,
+    mode.cellLandscape,
+  ),
+);
+
+/// Compose the sheet from cells already cover-fitted by [renderCell].
+///
+/// Equivalent to [composeSheet] — each cell is blitted at 1:1, so no second
+/// resample happens and the output is identical. This is the path the app uses,
+/// letting [SheetService] reuse cells across previews and the final export.
+Future<ui.Image> composeSheetFromCells(
+  List<ui.Image?> cells,
+  FilmMode mode,
+  SheetMeta meta,
+) => _composeWith(
+  cells.length,
+  mode,
+  meta,
+  hasFrame: (i) => cells[i] != null,
+  drawSlot: (canvas, i, x, y) => canvas.drawImage(
+    cells[i]!,
+    ui.Offset(x.toDouble(), y.toDouble()),
+    ui.Paint(),
+  ),
+);
 
 /// JPEG-encode a `dart:ui` image at [quality].
 Future<Uint8List> encodeJpeg(ui.Image image, int quality) async {
@@ -298,8 +363,17 @@ Future<Uint8List> encodeJpeg(ui.Image image, int quality) async {
 Future<Uint8List> encodeSheet(ui.Image sheet) =>
     encodeJpeg(sheet, outputQuality);
 
-/// Cover-fit one image into a cell and JPEG-encode it for the reorder grid.
-Future<Uint8List> makeThumb(ui.Image image, FilmMode mode) async {
+/// Cover-fit one source image into a standalone `cellWidth` x `cellHeight`
+/// image for [mode].
+///
+/// These are exactly the pixels [drawCoverCell] would paint into the sheet, so
+/// a cell rendered once can be blitted 1:1 by [composeSheetFromCells] with no
+/// second resample and no difference in output. [SheetService] caches these so
+/// that changing the memo, reordering frames, or exporting never re-reads the
+/// source files.
+///
+/// The caller owns the result and must dispose it.
+Future<ui.Image> renderCell(ui.Image source, FilmMode mode) async {
   final cw = mode.cellWidth;
   final ch = mode.cellHeight;
   final recorder = ui.PictureRecorder();
@@ -307,13 +381,21 @@ Future<Uint8List> makeThumb(ui.Image image, FilmMode mode) async {
     recorder,
     ui.Rect.fromLTWH(0, 0, cw.toDouble(), ch.toDouble()),
   );
-  drawCoverCell(canvas, image, 0, 0, cw, ch, mode.cellLandscape);
+  drawCoverCell(canvas, source, 0, 0, cw, ch, mode.cellLandscape);
   final picture = recorder.endRecording();
   final cell = await picture.toImage(cw, ch);
   picture.dispose();
-  final bytes = await encodeJpeg(cell, thumbQuality);
-  cell.dispose();
-  return bytes;
+  return cell;
+}
+
+/// Cover-fit one image into a cell and JPEG-encode it for the reorder grid.
+Future<Uint8List> makeThumb(ui.Image image, FilmMode mode) async {
+  final cell = await renderCell(image, mode);
+  try {
+    return await encodeJpeg(cell, thumbQuality);
+  } finally {
+    cell.dispose();
+  }
 }
 
 /// Downscale a composed sheet for the on-screen preview (the full-size sheet

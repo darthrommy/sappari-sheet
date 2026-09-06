@@ -38,8 +38,19 @@ ThemeData buildTheme() {
       surface: Palette.shell,
       primary: Palette.textPrimary,
     ),
+    // The app chrome uses the same families as the sheet. The fallback matters
+    // as much here as it does there: the UI strings are Japanese, and Google
+    // Sans Flex has no CJK, so without it every label would escape to whatever
+    // system font the machine happens to have.
     textTheme: base.textTheme.apply(
       fontFamily: fontFamily,
+      fontFamilyFallback: fontFallback,
+      bodyColor: Palette.textPrimary,
+      displayColor: Palette.textPrimary,
+    ),
+    primaryTextTheme: base.primaryTextTheme.apply(
+      fontFamily: fontFamily,
+      fontFamilyFallback: fontFallback,
       bodyColor: Palette.textPrimary,
       displayColor: Palette.textPrimary,
     ),

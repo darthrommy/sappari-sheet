@@ -1,13 +1,20 @@
 # negadice — Porting Specification
 
-Source of truth for the React Native and Flutter ports of **negadice**, a
-contact-sheet (index sheet) generator for scanned film. One sheet = one roll.
+Source of truth for **negadice-flutter**, a contact-sheet (index sheet)
+generator for scanned film. One sheet = one roll.
 
 Origin: `G:\programming\softwares\negadice` (Tauri 2 + Rust + React).
-**The origin repo is read-only. No port may write inside it.**
+**The origin repo is read-only. This port must never write inside it.**
 
-Derived from `src-tauri/src/{geometry,render,text,naming,commands}.rs` and
+Originally derived from
+`src-tauri/src/{geometry,render,text,naming,commands}.rs` and
 `src/{App.tsx,lib/tauri-images.ts,components/app/*}` at version 26.7.0.
+
+**The sheet design has since been deliberately forked** toward an
+International Typographic layout, so §2, §3.3 and §3.4 describe this port's
+own design rather than the Rust original's, and their [EXACT] tags bind
+against the tables here. Everything else — cover-fit, naming, ordering, the
+operation contracts — still tracks the original. See `docs/DEVIATIONS.md` §0.
 
 ---
 
@@ -15,7 +22,7 @@ Derived from `src-tauri/src/{geometry,render,text,naming,commands}.rs` and
 
 Every requirement below is tagged. Respect the tag.
 
-- **[EXACT]** — must produce identical values to the Rust original. Port as a
+- **[EXACT]** — must produce exactly the values tabulated here. Implement as a
   pure function with a unit test. No latitude.
 - **[STRUCTURAL]** — same algorithm and same visible result; sub-pixel and
   encoder differences acceptable.
@@ -29,53 +36,72 @@ original lacks. Match scope exactly.
 
 ## 2. Sheet geometry  [EXACT]
 
-Fixed landscape sheet with a header band on top and a grid below.
+Fixed landscape sheet: a title block on top, then a centred grid whose frame
+numbers sit below each cell.
 
 ```
-SHEET_WIDTH  = 3000
-SHEET_HEIGHT = 2100
-MARGIN       = 144
-GAP          = 8
-HEADER_H     = 140
-```
+SHEET_WIDTH   = 3000      MARGIN        = 120
+SHEET_HEIGHT  = 2100      HEADER_H      = 240
+GUTTER        = 54        ROW_GAP       = 14
+NUMBER_BLOCK  = 26        NUMBER_BASELINE_OFFSET = 20
 
-Derived, using **integer (floor) division** — do not use floats:
-
-```
-avail_w = SHEET_WIDTH  - MARGIN*2            = 2712
-avail_h = SHEET_HEIGHT - MARGIN*2 - HEADER_H = 1672
-
-cw = (avail_w - GAP*(cols-1)) / cols     // integer division
-ch = (avail_h - GAP*(rows-1)) / rows     // integer division
+contentWidth  = 3000 - 2*120       = 2760
+contentHeight = 2100 - 2*120 - 240 = 1620
 ```
 
 ### Film modes
 
-| id      | label (UI)    | cols | rows | capacity | cell    | orientation |
-|---------|---------------|------|------|----------|---------|-------------|
-| `half`  | `35mm ハーフ` | 12   | 6    | 72       | 218×272 | portrait    |
-| `35mm`  | `35mm`        | 7    | 6    | 42       | 380×272 | landscape   |
-| `645`   | `645`         | 4    | 4    | 16       | 672×412 | landscape   |
-| `66`    | `6×6`         | 4    | 3    | 12       | 672×552 | landscape   |
-| `67`    | `6×7`         | 4    | 3    | 12       | 672×552 | landscape   |
+Cells take the **true aspect of the film format**, not a division of the
+available space.
 
-`half` is the only portrait-cell mode; scanners emit every other format
-landscape. An unknown mode id is an error: `unknown film mode: {id}`.
+| id      | label (UI)    | cols | rows | capacity | aspect          | cell    |
+|---------|---------------|------|------|----------|-----------------|---------|
+| `half`  | `35mm ハーフ` | 12   | 6    | 72       | 18/24 = 0.750   | 174x232 |
+| `35mm`  | `35mm`        | 7    | 6    | 42       | 36/24 = 1.500   | 348x232 |
+| `645`   | `645`         | 4    | 4    | 16       | 56/41.5 = 1.349 | 497x368 |
+| `66`    | `6×6`         | 4    | 3    | 12       | 1.000           | 504x504 |
+| `67`    | `6×7`         | 4    | 3    | 12       | 70/56 = 1.250   | 630x504 |
 
-### Cell placement
+`half` is the only portrait format. An unknown mode id is an error:
+`unknown film mode: {id}`.
+
+### Cell sizing
+
+Take whichever constraint binds first, then keep the aspect exact:
 
 ```
-row = index / cols        // integer division
-col = index % cols
-x   = MARGIN + col * (cw + GAP)
-y   = MARGIN + HEADER_H + row * (ch + GAP)     // = 284 + row*(ch+GAP)
+heightLimitedCellHeight = (contentHeight - NUMBER_BLOCK*rows - ROW_GAP*(rows-1)) / rows
+widthLimitedCellWidth   = (contentWidth - GUTTER*(cols-1)) / cols
+
+cw = min(round(heightLimitedCellHeight * aspect), widthLimitedCellWidth)
+ch = cw derived back through the aspect
 ```
 
-**Invariant to unit-test for all five modes**: the last cell
-(`index = capacity-1`) satisfies `x+cw <= 2856` and `y+ch <= 1956`, and
-`y >= 284`. All five modes land exactly on those bounds.
+All division truncates. Height binds for every current mode; for 35mm **both**
+bind at once, which is what lets 42 frames at 3:2 fit a 3000x2100 sheet at all.
 
----
+### Placement
+
+The grid is **centred horizontally** and sits directly under the header:
+
+```
+gridWidth = cols*cw + GUTTER*(cols-1)
+gridLeft  = (SHEET_WIDTH - gridWidth) / 2
+gridTop   = MARGIN + HEADER_H              = 360
+rowPitch  = ch + NUMBER_BLOCK + ROW_GAP
+
+x = gridLeft + col * (cw + GUTTER)
+y = gridTop  + row * rowPitch
+
+numberBaseline(i) = (x, y + ch + NUMBER_BASELINE_OFFSET)
+```
+
+**Invariants to unit-test for all five modes**: cell aspect equals the film
+aspect (within rounding); the grid is centred to within a pixel and never
+narrower than `MARGIN`; the last cell clears the right margin; the last
+**number baseline** — not the cell — clears the bottom margin at `y <= 1980`
+(every mode lands on 1972). For 35mm specifically, `gridWidth == contentWidth`
+and `gridLeft == MARGIN`.
 
 ## 3. Rendering
 
@@ -97,69 +123,44 @@ Result is always exactly `cw × ch`.
 ### 3.2 Sheet composition  [STRUCTURAL]
 
 1. Fill `3000×2100` with white `#FFFFFF`.
-2. Draw the memo header (§3.4).
+2. Draw the title block (§3.4), whose `Frames` value is the slot count below.
 3. For each slot `i` in `0..min(len, capacity)`:
    - decoded → `cover_cell`, blit at `cell_origin(i)`
    - `None` (unreadable/undecodable file) → fill the cell with gray `#CCCCCC`
-   - then draw the frame label (§3.3) — **labels draw over both cases**
+   - then draw the frame number (§3.3) **below** the cell — drawn in both cases
 
-### 3.3 Frame label  [STRUCTURAL]
+### 3.3 Frame number  [STRUCTURAL]
 
-Bottom-right of every cell. Text is `1`-based, zero-padded to two digits
-(`format!("{:02}")` → `01`, `02`, … `72`). Frame 100+ would print unpadded;
-capacity caps at 72 so it never arises.
+Set **below** the cell, flush with its left edge, baseline at
+`cellY + cellHeight + 20`, size 24, colour `#1A1A1A`. **Unpadded** — `1`, not
+`01`. Nothing is ever painted over the photograph.
 
-```
-font    = UDEV Gothic 35JPDOC Bold
-size    = 30px
-pad     = 6
-box_w   = ceil(text_width) + pad*2
-box_h   = ceil(line_height) + pad*2        // line_height = ascent - descent
-bx      = cx + cw - box_w - 4
-by      = cy + ch - box_h - 4
-```
-
-Background: blend white over the existing pixels at **0.92 alpha** —
-`p = round(p*0.08 + 255*0.92)` per channel, clipped to sheet bounds. Then draw
-the text in black `#000000` with its **top-left** at `(bx+pad, by+pad)`.
-
-### 3.4 Memo header — the "NOTE" field  [STRUCTURAL]
-
-Always draw a hairline `#D2D2D2` across `y = MARGIN + HEADER_H - 1 = 283`,
-from `x = 144` to `x = 2856`, separating the header band from the grid. This
-happens **even when the memo is empty**.
-
-Then `memo.trim()`; if empty, stop.
-
-Otherwise a fixed-size framed field (constant size regardless of text length):
+### 3.4 Title block  [STRUCTURAL]
 
 ```
-font         = UDEV Gothic 35JPDOC Regular
-MEMO_PX      = 56    // value text
-MEMO_CAP_PX  = 26    // "NOTE" caption
-MEMO_BOX_H   = 96
-MEMO_PAD_X   = 22
-MEMO_BORDER  = 3
-MEMO_INK     = #3C3C3C
-
-box_x = 144
-box_y = 144 + (140 - 96)/2 = 166
-box_w = (3000 - 288) / 2 = 1356
+titlePx = 68 (bold)   metaLabelPx = 24 (bold)   metaValuePx = 34
+titleMaxWidth = 1000  titleFirstBaseline = 190
+columnsLeft = 1180    columnWidth = 300    columnSpacing = 40
+columnRuleInset = 20  columnRuleTop = 134  columnRuleBottom = 232
+columnRuleWidth = 2   headerRuleY = 328    headerRuleWidth = 3
+ink = #1A1A1A         ground = #FFFFFF
 ```
 
-1. **Border**: 3px-thick rectangle *outline* only (interior untouched) at
-   `(x=144, y=166, w=1356, h=96)`, colour `#3C3C3C`, clipped to sheet bounds.
-   A pixel is border if `yy < y+t || yy+t >= y1 || xx < x+t || xx+t >= x1`.
-2. **Value**: `clip_to_width(memo, box_w - MEMO_PAD_X*2 = 1312)` (§3.5), drawn
-   left-aligned at `x = box_x + 22`, colour `#1E1E1E`, vertically centred by
-   **inked glyph extent**, not font metrics:
-   `(vtop, vbot) = visual_v_bounds(value)`;
-   `baseline = box_y + 96/2 - (vtop+vbot)/2`; top-left y = `baseline - ascent`.
-3. **Caption** `"NOTE"` straddling the top border: compute
-   `(ctop, cbot) = visual_v_bounds("NOTE")` at 26px, `cap_x = box_x + 16`.
-   White out a notch `[cap_x-8, cap_x+cap_w+8] × [box_y+ctop-2, box_y+cbot+4]`
-   (clipped, colour `#FFFFFF`), then draw `"NOTE"` in `#3C3C3C` with
-   `baseline = box_y - (ctop+cbot)/2`, top-left y = `baseline - ascent`.
+1. **Title** — the roll name, flush left at `MARGIN`, wrapped within
+   `titleMaxWidth`, capped at 2 lines with an ellipsis, first baseline at
+   `titleFirstBaseline`. An **empty name falls back to the film format label**,
+   so the title is never blank.
+2. **Columns** — `Date`, `Frames`, `Film`, in that order. Column `i` starts at
+   `columnsLeft + i*(columnWidth + columnSpacing)`, with a `columnRuleWidth`
+   vertical rule `columnRuleInset` to its left spanning
+   `columnRuleTop..columnRuleBottom`. Caption baseline 168 in bold; value
+   baseline 214, clipped to `columnWidth` by §3.5. `Frames` is the number of
+   slots actually placed and `Film` the mode label — both derived, never typed.
+3. **Closing rule** — full content width at `headerRuleY`, `headerRuleWidth`
+   thick, in `ink`.
+
+Colour carries no hierarchy: one grey does title, captions, values, numbers and
+rules alike. Weight and size do the work.
 
 ### 3.5 clip_to_width  [EXACT]
 
@@ -190,10 +191,11 @@ downscale uses `Triangle` (bilinear) filtering, not Lanczos3.
 
 ## 4. Text rendering  [BEST-EFFORT; metrics EXACT where computable]
 
-Font: **UDEV Gothic 35JPDOC**, SIL OFL 1.1, Bold + Regular. Copy both `.ttf`
-files **and `OFL.txt`** from `negadice/src-tauri/assets/fonts/` into the port
-and register them in the app bundle. The font is embedded so there is no
-runtime font lookup and Japanese memo text renders identically everywhere.
+Fonts: **Google Sans Flex** (primary) with **Noto Sans JP** (fallback), both
+from Google Fonts under SIL OFL 1.1, Regular + Bold each, all four embedded
+alongside `OFL-GoogleSansFlex.txt` and `OFL-NotoSansJP.txt`. Google Sans Flex
+carries no CJK, so Japanese resolves through Noto Sans JP. Embedding means no
+runtime font lookup and identical rendering on every machine.
 
 Required primitives (Rust uses `ab_glyph`):
 
@@ -266,13 +268,13 @@ services/providers rather than IPC, but the semantics are fixed.
 6. `frame = { path, fileName, thumb }`.
 7. Emit `analyze` progress per item, then a final `done`.
 
-### render(paths, outDir, fileName, mode, memo) -> writtenPath
+### render(paths, outDir, fileName, mode, meta) -> writtenPath
 
 Decode all → compose → encode q92 → create the parent directory if needed →
 write to `build_output_path(outDir, fileName)`. Returns the path.
 Progress: `decode` per item, `compose`, `done`.
 
-### preview(paths, mode, memo) -> imageData
+### preview(paths, mode, meta) -> imageData
 
 Identical pipeline to `render`, but downscale to 1500×1050 and return it
 instead of writing. **Must share the decode/compose code path with `render`**
@@ -307,8 +309,9 @@ Shell `#1a1a1a`, white text.
   - When frames exist: `{n} / {capacity} frames` (12px, `#888`)
 - `シート設定`
   - `フィルム` → select, options `{label}（最大{capacity}枚）`
-  - `メモ（シート上部に印字）` → 2-row textarea,
-    placeholder `ロール名・日付・現像所など`
+  - `ロール名（シート表題に印字）` → single-line input,
+    placeholder `Kodak Gold 200 など`
+  - `日付` → single-line input, defaulting to today as `YYYY-MM-DD`
   - `ファイル名` → text input, placeholder `index_sheet`,
     hint `拡張子 .jpg は自動で追加されます`
 - Footer: primary button `書き出す` / while busy `生成中...`,
@@ -324,7 +327,7 @@ Shell `#1a1a1a`, white text.
   `JPEG / PNG - 最大{capacity}枚 · ドラッグで並べ替え`.
 - With frames, two tabs:
   - `並べ替え` — grid at the mode's `cols`, cells at the mode's aspect
-    (`2/3` for half, `3/2` otherwise), thumbnails `object-fit: cover`,
+    (each mode's true film aspect), thumbnails `object-fit: cover`,
     null thumb → `#cccccc` block, 2-digit index badge bottom-right on
     white 90%. Drag to reorder: source cell at 40% opacity, target ringed.
   - `プレビュー` — the real composed sheet on `#151515`, contain-fit,
@@ -336,7 +339,7 @@ Shell `#1a1a1a`, white text.
 - Input is **file paths** — native file dialog + OS drag-and-drop onto the
   window. Never a browser File object.
 - Export: pick a directory, render, toast `書き出しが完了しました`, then
-  **clear the image list and the memo**. Failure toasts
+  **clear the image list and the roll name**. Failure toasts
   `書き出しに失敗しました: {err}`. Empty list toasts `書き出す画像がありません`.
 - Changing film mode re-analyzes with `sort=false`, preserving arrangement.
 
@@ -354,20 +357,23 @@ header; half cells portrait, 35mm cells landscape.
 no-extension reject); the three sanitize vectors plus fallback; both separator
 cases and the sanitizing case for output paths; all four `natural_cmp` vectors.
 
-**render** — `clip_to_width` returns unchanged when it fits, ellipsizes and
-stays within budget when it does not; rect border paints edges only, leaving
-interior and outside untouched; `cover_cell` output is exactly `cw × ch` for
-both a portrait source into a landscape cell and vice versa; `compose_sheet`
-is 3000×2100, corner is white, cells 0/1/2 have the expected centre colour, an
-unfilled cell centre is white; `None` → `#CCCCCC` centre; the label paints
-bright pixels over a dark cell in the bottom-right region; **a Japanese memo
-(`テストロール 2024`) paints more than 100 dark pixels in the header band while
-an empty memo paints zero** (this is the CJK-font-path test — keep it);
-encoded sheet round-trips to 3000×2100; preview decodes to exactly 1500×1050;
-thumbnail decodes to exactly `cw × ch`.
+**render** — `clip_to_width` returns unchanged when it fits and ellipsizes
+within budget when it does not; `cover_cell` output is exactly `cw × ch` for
+both a portrait source into a landscape cell and vice versa; `compose_sheet` is
+3000×2100, corner white, cells 0/1/2 have the expected centre colour, an
+unfilled cell centre is white; `None` → `#CCCCCC` centre; `composeSheetFromCells`
+agrees with `composeSheet` at every cell centre and corner (this guards the cell
+cache); **the cell interior is entirely untouched where the old design painted
+its label box**, and ink appears in the number block below; numbers are
+unpadded; the title paints ink and the closing rule spans the content width;
+**a Japanese roll name paints materially more ink than the fallback title** —
+this is the CJK-fallback test, and the only thing that catches a broken font
+chain, so keep it; an empty name still paints a title; encoded sheet
+round-trips to 3000×2100; preview decodes to exactly 1500×1050; thumbnail
+decodes to exactly `cw × ch`.
 
-**text** — Latin and Japanese both yield positive advance width; `draw_text`
-darkens pixels.
+**text** — Latin (primary) and Japanese (fallback) both yield positive advance
+width; inked bounds sit above the baseline and fall back on blanks.
 
 ---
 

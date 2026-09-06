@@ -8,6 +8,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../core/geometry.dart';
+import '../core/sheet_meta.dart';
 import '../services/sheet_service.dart';
 import 'theme.dart';
 
@@ -25,7 +26,7 @@ class PreviewPane extends StatefulWidget {
     super.key,
     required this.frames,
     required this.mode,
-    required this.memo,
+    required this.meta,
     required this.isDraggingOver,
     required this.onPickFiles,
     required this.onReorder,
@@ -35,7 +36,7 @@ class PreviewPane extends StatefulWidget {
 
   final List<Frame> frames;
   final FilmMode mode;
-  final String memo;
+  final SheetMeta meta;
   final bool isDraggingOver;
   final VoidCallback onPickFiles;
   final void Function(int from, int to) onReorder;
@@ -158,7 +159,7 @@ class _PreviewPaneState extends State<PreviewPane>
                         child: SheetPreview(
                           frames: widget.frames,
                           mode: mode,
-                          memo: widget.memo,
+                          meta: widget.meta,
                           service: widget.service,
                           tabs: _tabs,
                         ),
@@ -407,21 +408,21 @@ class _ReorderCell extends StatelessWidget {
   }
 }
 
-/// The real composed sheet, debounced so typing in the memo field does not kick
+/// The real composed sheet, debounced so typing in the roll name does not kick
 /// off a render on every keystroke.
 class SheetPreview extends StatefulWidget {
   const SheetPreview({
     super.key,
     required this.frames,
     required this.mode,
-    required this.memo,
+    required this.meta,
     required this.service,
     required this.tabs,
   });
 
   final List<Frame> frames;
   final FilmMode mode;
-  final String memo;
+  final SheetMeta meta;
   final SheetService service;
   final TabController tabs;
 
@@ -429,15 +430,26 @@ class SheetPreview extends StatefulWidget {
   State<SheetPreview> createState() => _SheetPreviewState();
 }
 
+/// Everything a composed preview depends on.
+///
+/// Deliberately a record rather than an interpolated string: [SheetMeta] is a
+/// value object with real `==`, so structural equality does the comparison and
+/// a field added to it participates automatically. Stringifying the meta hid a
+/// bug where the key never changed, because the default `toString` is a
+/// constant.
+typedef PreviewKey = ({String paths, FilmMode mode, SheetMeta meta});
+
+PreviewKey previewKey(List<Frame> frames, FilmMode mode, SheetMeta meta) =>
+    (paths: frames.map((f) => f.path).join('|'), mode: mode, meta: meta);
+
 class _SheetPreviewState extends State<SheetPreview> {
   Timer? _debounce;
   Uint8List? _preview;
-  String? _previewKey;
+  PreviewKey? _previewKey;
   bool _loading = false;
   String? _error;
 
-  String get _key =>
-      '${widget.frames.map((f) => f.path).join('|')}::${widget.mode.id}::${widget.memo}';
+  PreviewKey get _key => previewKey(widget.frames, widget.mode, widget.meta);
 
   @override
   void initState() {
@@ -478,7 +490,7 @@ class _SheetPreviewState extends State<SheetPreview> {
       final bytes = await widget.service.preview(
         widget.frames.map((f) => f.path).toList(),
         widget.mode,
-        widget.memo,
+        widget.meta,
       );
       if (!mounted) return;
       setState(() {

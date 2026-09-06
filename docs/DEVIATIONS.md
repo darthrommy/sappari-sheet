@@ -3,8 +3,58 @@
 Every place this port departs from `negadice` (Tauri 2 + Rust + React), and why.
 Tiers refer to `docs/PORTING-SPEC.md` §1.
 
-Everything tagged **[EXACT]** in the spec is reproduced exactly and covered by
-unit tests. The items below are all **[BEST-EFFORT]** or **[STRUCTURAL]**.
+**The sheet design is now a deliberate fork — see §0 below.** Everything the
+spec still tags **[EXACT]** is exact against *this port's* spec and covered by
+unit tests; the remaining items are **[BEST-EFFORT]** or **[STRUCTURAL]**.
+
+---
+
+## 0. The sheet design is forked, not ported — [DELIBERATE]
+
+**Original:** a 140px band carrying a bordered "NOTE" field with the memo, then
+a grid whose cells are pure division of the available space (35mm at 380x272,
+an aspect of 1.40), each frame's number painted *over* its bottom-right corner
+on a 92%-opaque white box.
+
+**Here:** an International Typographic layout. The roll name is a large
+flush-left title, with ruled `Date` / `Frames` / `Film` columns beside it and a
+3px rule closing a 240px header. Cells take their **true film aspect** — 35mm is
+genuinely 3:2, 6x6 genuinely square — and frame numbers are set *below* each
+cell, unpadded (`1`, not `01`), so nothing is ever painted over a photograph.
+The grid is centred, so formats that do not fill the content box get symmetric
+margins rather than oversized gutters.
+
+**Why:** requested. Sheets get shared, so the roll's identity should lead and
+the photographs should be unobscured.
+
+**Consequence:** the two apps produce visibly different sheets from the same
+roll, and this is intended. `negadice` itself is untouched. Capacities are
+unchanged, so no roll that fitted one sheet now fails to. Frames are smaller
+than before (35mm went from 380x272 to 348x232) because the below-cell numbers
+and the taller header both cost vertical space. The single free-text `memo`
+became a structured `SheetMeta { name, date }`; `Frames` and `Film` are derived
+and never typed.
+
+---
+
+## 0b. Fonts — [DELIBERATE]
+
+**Original:** UDEV Gothic 35JPDOC (Regular + Bold), one family covering both
+Latin and CJK.
+
+**Here:** **Google Sans Flex** primary with **Noto Sans JP** as the fallback,
+both from Google Fonts, both SIL OFL 1.1, both embedded. Google Sans Flex has no
+CJK coverage, so a Japanese roll name resolves through Noto Sans JP — a mixed
+run like `テストロール 2024` draws its digits from the primary and its kana from
+the fallback.
+
+`dart:ui`'s `ParagraphStyle` has no `fontFamilyFallback`; only `TextStyle` does,
+so the chain is set on the pushed style, which is what shaping actually uses.
+
+**Consequence:** assets grew from 7.7 MB to ~10.9 MB. `test/font_fixture.dart`
+registers *both* families deliberately — loading only the primary would let
+Japanese fall through to the test harness's placeholder font and hide a broken
+fallback chain.
 
 ---
 
@@ -85,30 +135,7 @@ reproduced exactly.
 
 ---
 
-## 5. Label background alpha quantized — [STRUCTURAL]
 
-**Original:** blends per channel in float: `p * 0.08 + 255 * 0.92`.
-
-**Here:** draws `Color(0xEBFFFFFF)` — alpha 235, i.e. `0.92 * 255 = 234.6`
-rounded — and lets Skia blend.
-
-**Consequence:** Up to 1/255 difference per channel under the label box.
-
----
-
-## 6. NOTE border drawn as a stroked rect — [STRUCTURAL]
-
-**Original:** a manual pixel loop that paints only cells satisfying
-`yy < y+t || yy+t >= y1 || xx < x+t || xx+t >= x1`, i.e. a 3px inward band.
-
-**Here:** `PaintingStyle.stroke` with `strokeWidth = 3` on a rect inset by half
-the stroke width, which produces the same 3px inward band.
-
-**Consequence:** Identical geometry; Skia anti-aliases the outer edge where the
-original was hard-edged. Verified by test: left border inked, field interior
-still white.
-
----
 
 ## 7. Parallel decode uses bounded async, not isolates — [STRUCTURAL]
 

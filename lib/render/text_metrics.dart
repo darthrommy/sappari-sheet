@@ -12,8 +12,13 @@ library;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-/// Family name declared in `pubspec.yaml` for the bundled UDEV Gothic 35JPDOC.
-const String fontFamily = 'UDEVGothic35JPDOC';
+/// Primary family: Google Sans Flex carries Latin, digits and punctuation.
+const String fontFamily = 'Google Sans Flex';
+
+/// Fallback chain. Google Sans Flex has no CJK coverage, so Japanese roll names
+/// resolve through Noto Sans JP. Both are bundled, so the chain never reaches
+/// a system font and a sheet renders identically on every machine.
+const List<String> fontFallback = <String>['Noto Sans JP'];
 
 /// Build a laid-out painter for [text] at [px] pixels.
 ui.Paragraph layoutText(
@@ -25,6 +30,8 @@ ui.Paragraph layoutText(
   final builder =
       ui.ParagraphBuilder(
           ui.ParagraphStyle(
+            // dart:ui's ParagraphStyle has no fallback list; the pushed
+            // TextStyle below carries it, which is what shaping uses.
             fontFamily: fontFamily,
             fontSize: px,
             fontWeight: bold ? ui.FontWeight.w700 : ui.FontWeight.w400,
@@ -38,11 +45,56 @@ ui.Paragraph layoutText(
           ),
         )
         ..pushStyle(
-          ui.TextStyle(color: color, fontFamily: fontFamily, fontSize: px),
+          ui.TextStyle(
+            color: color,
+            fontFamily: fontFamily,
+            fontFamilyFallback: fontFallback,
+            fontSize: px,
+          ),
         )
         ..addText(text);
   final paragraph = builder.build()
     ..layout(const ui.ParagraphConstraints(width: double.infinity));
+  return paragraph;
+}
+
+/// Lay out [text] wrapped to [maxWidth], capped at [maxLines] with an ellipsis.
+///
+/// Used for the sheet title, where a long roll name should wrap to a second
+/// line and then be truncated rather than overrun the metadata columns.
+ui.Paragraph layoutWrapped(
+  String text,
+  double px,
+  double maxWidth, {
+  int maxLines = 2,
+  bool bold = false,
+  ui.Color color = const ui.Color(0xFF000000),
+}) {
+  final builder =
+      ui.ParagraphBuilder(
+          ui.ParagraphStyle(
+            // dart:ui's ParagraphStyle has no fallback list; the pushed
+            // TextStyle below carries it, which is what shaping uses.
+            fontFamily: fontFamily,
+            fontSize: px,
+            fontWeight: bold ? ui.FontWeight.w700 : ui.FontWeight.w400,
+            textDirection: ui.TextDirection.ltr,
+            maxLines: maxLines,
+            ellipsis: '…',
+            height: 1.12,
+          ),
+        )
+        ..pushStyle(
+          ui.TextStyle(
+            color: color,
+            fontFamily: fontFamily,
+            fontFamilyFallback: fontFallback,
+            fontSize: px,
+          ),
+        )
+        ..addText(text);
+  final paragraph = builder.build()
+    ..layout(ui.ParagraphConstraints(width: maxWidth));
   return paragraph;
 }
 

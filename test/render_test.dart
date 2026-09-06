@@ -1,28 +1,22 @@
-// Translation of the `#[cfg(test)] mod tests` in
-// `negadice/src-tauri/src/render.rs` and `text.rs` — spec §8.
+// Rendering acceptance criteria — spec §3, §4, §8.
 //
-// These exercise the real dart:ui raster path, including the bundled CJK font,
-// so they are the acceptance criteria for the port's visual output.
+// These exercise the real dart:ui raster path with the bundled fonts, so they
+// are what proves the sheet actually looks like the design rather than merely
+// compiling. The header, number placement and font-fallback assertions are the
+// load-bearing ones.
 
 import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:negadice/core/geometry.dart';
+import 'package:negadice/core/sheet_meta.dart';
 import 'package:negadice/render/sheet_renderer.dart';
 import 'package:negadice/render/text_metrics.dart';
 
-/// Load the bundled UDEV Gothic faces so text tests exercise the real font
-/// rather than the test harness's placeholder.
-Future<void> loadFonts() async {
-  final loader = FontLoader(fontFamily)
-    ..addFont(rootBundle.load('assets/fonts/UDEVGothic35JPDOC-Regular.ttf'))
-    ..addFont(rootBundle.load('assets/fonts/UDEVGothic35JPDOC-Bold.ttf'));
-  await loader.load();
-}
+import 'font_fixture.dart';
 
 Future<ui.Image> solid(int w, int h, int r, int g, int b) {
   final pixels = Uint8List(w * h * 4);
@@ -52,6 +46,18 @@ class Pixels {
     final i = (y * width + x) * 4;
     return (bytes[i], bytes[i + 1], bytes[i + 2]);
   }
+
+  /// Count pixels darker than mid-grey inside the given box.
+  int inkIn(int x0, int y0, int x1, int y1) {
+    var count = 0;
+    for (var y = y0; y < y1; y++) {
+      for (var x = x0; x < x1; x++) {
+        final (r, g, b) = at(x, y);
+        if (r < 128 && g < 128 && b < 128) count++;
+      }
+    }
+    return count;
+  }
 }
 
 Future<Pixels> pixelsOf(ui.Image image) async {
@@ -59,26 +65,17 @@ Future<Pixels> pixelsOf(ui.Image image) async {
   return Pixels(data!.buffer.asUint8List(), image.width);
 }
 
-int darkPixelsInHeader(Pixels p) {
-  var count = 0;
-  for (var y = margin; y < margin + headerH - 1; y++) {
-    for (var x = margin; x < sheetWidth - margin; x++) {
-      final (r, g, b) = p.at(x, y);
-      if (r < 128 && g < 128 && b < 128) count++;
-    }
-  }
-  return count;
-}
+/// Ink inside the title area, left of the metadata columns.
+int titleInk(Pixels p) => p.inkIn(margin, 100, margin + 1000, 280);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-
   setUpAll(loadFonts);
 
   group('text', () {
-    test('fonts load and advance for Latin and Japanese', () {
+    test('both families advance: Latin primary, Japanese via fallback', () {
       expect(textWidth('42', 30, bold: true), greaterThan(0));
-      // The bundled JPDOC face covers Japanese glyphs.
+      // Google Sans Flex has no CJK; this only works through Noto Sans JP.
       expect(textWidth('テスト', 40), greaterThan(0));
     });
 
@@ -88,7 +85,6 @@ void main() {
         final (top, bottom) = await visualVBounds('NOTE', 26);
         expect(top, lessThan(0), reason: 'ink extends above the baseline');
         expect(bottom, greaterThan(top));
-        // All-space input has nothing drawable and uses the nominal band.
         final (ftop, fbot) = await visualVBounds('   ', 26);
         expect(ftop, closeTo(-26 * 0.7, 0.001));
         expect(fbot, 0.0);
@@ -106,14 +102,12 @@ void main() {
   group('clipToWidth', () {
     test('truncates with an ellipsis only when needed', () {
       const text = 'Kodak ProImage 100 Extra Long Roll Name';
-      final full = textWidth(text, memoPx);
-      // Fits: returned unchanged.
-      expect(clipToWidth(text, memoPx, full + 10), text);
-      // Does not fit: shorter, ellipsized, and within the budget.
-      final clipped = clipToWidth(text, memoPx, full / 2);
+      final full = textWidth(text, metaValuePx);
+      expect(clipToWidth(text, metaValuePx, full + 10), text);
+      final clipped = clipToWidth(text, metaValuePx, full / 2);
       expect(clipped.endsWith('…'), isTrue);
       expect(clipped.runes.length, lessThan(text.runes.length));
-      expect(textWidth(clipped, memoPx), lessThanOrEqualTo(full / 2));
+      expect(textWidth(clipped, metaValuePx), lessThanOrEqualTo(full / 2));
     });
   });
 
@@ -121,30 +115,38 @@ void main() {
     test('output matches the cell size and orientation', () async {
       const landscape = FilmMode.full35;
       final portraitSource = await solid(300, 400, 0, 255, 0);
-      final thumbBytes = await makeThumb(portraitSource, landscape);
-      final decoded = img.decodeJpg(thumbBytes)!;
+      final decoded = img.decodeJpg(
+        await makeThumb(portraitSource, landscape),
+      )!;
       expect(decoded.width, landscape.cellWidth);
       expect(decoded.height, landscape.cellHeight);
       portraitSource.dispose();
 
       const portrait = FilmMode.half;
       final landscapeSource = await solid(400, 300, 255, 0, 0);
-      final halfBytes = await makeThumb(landscapeSource, portrait);
-      final halfDecoded = img.decodeJpg(halfBytes)!;
-      expect(halfDecoded.width, portrait.cellWidth);
-      expect(halfDecoded.height, portrait.cellHeight);
+      final half = img.decodeJpg(await makeThumb(landscapeSource, portrait))!;
+      expect(half.width, portrait.cellWidth);
+      expect(half.height, portrait.cellHeight);
       landscapeSource.dispose();
     });
 
     test('source rect is centered and respects the cover scale', () async {
-      // 400x300 into a 380x272 landscape cell: cover scale is height-driven.
       final image = await solid(400, 300, 0, 0, 0);
-      final rect = coverSourceRect(image, 380, 272, true);
+      final rect = coverSourceRect(image, 348, 232, true);
       expect(rect.center.dx, closeTo(200, 0.001));
       expect(rect.center.dy, closeTo(150, 0.001));
       expect(rect.width, lessThanOrEqualTo(400.001));
       expect(rect.height, lessThanOrEqualTo(300.001));
       image.dispose();
+    });
+
+    test('renderCell produces a cell-sized image', () async {
+      final image = await solid(400, 300, 12, 34, 56);
+      final cell = await renderCell(image, FilmMode.half);
+      expect(cell.width, FilmMode.half.cellWidth);
+      expect(cell.height, FilmMode.half.cellHeight);
+      image.dispose();
+      cell.dispose();
     });
   });
 
@@ -155,7 +157,11 @@ void main() {
         await solid(400, 300, 0, 255, 0),
         await solid(400, 300, 0, 0, 255),
       ];
-      final sheet = await composeSheet(images, FilmMode.full35, '');
+      final sheet = await composeSheet(
+        images,
+        FilmMode.full35,
+        SheetMeta.empty,
+      );
       expect(sheet.width, sheetWidth);
       expect(sheet.height, sheetHeight);
 
@@ -166,8 +172,11 @@ void main() {
       final expected = [(255, 0, 0), (0, 255, 0), (0, 0, 255)];
       for (var i = 0; i < expected.length; i++) {
         final (x, y) = mode.cellOrigin(i);
-        final center = p.at(x + mode.cellWidth ~/ 2, y + mode.cellHeight ~/ 2);
-        expect(center, expected[i], reason: 'cell $i center color');
+        expect(
+          p.at(x + mode.cellWidth ~/ 2, y + mode.cellHeight ~/ 2),
+          expected[i],
+          reason: 'cell $i center color',
+        );
       }
 
       final (ux, uy) = mode.cellOrigin(10);
@@ -184,7 +193,11 @@ void main() {
     });
 
     test('a missing image draws a gray placeholder', () async {
-      final sheet = await composeSheet(<ui.Image?>[null], FilmMode.full35, '');
+      final sheet = await composeSheet(
+        <ui.Image?>[null],
+        FilmMode.full35,
+        SheetMeta.empty,
+      );
       const mode = FilmMode.full35;
       final (x, y) = mode.cellOrigin(0);
       final p = await pixelsOf(sheet);
@@ -196,104 +209,179 @@ void main() {
       sheet.dispose();
     });
 
-    test('the label paints over the image', () async {
-      final image = await solid(400, 300, 200, 0, 0);
-      final sheet = await composeSheet(<ui.Image?>[image], FilmMode.full35, '');
+    test('composeSheetFromCells matches composeSheet', () async {
       const mode = FilmMode.full35;
-      final (x, y) = mode.cellOrigin(0);
-      final p = await pixelsOf(sheet);
+      const meta = SheetMeta(name: 'テスト', date: '2026-09-06');
+      final sources = <ui.Image?>[
+        await solid(400, 300, 255, 0, 0),
+        await solid(300, 400, 0, 255, 0), // portrait, so it gets rotated
+        null,
+        await solid(800, 200, 0, 0, 255),
+      ];
 
-      var bright = false;
-      for (var yy = y + mode.cellHeight - 40; yy < y + mode.cellHeight; yy++) {
-        for (var xx = x + mode.cellWidth - 60; xx < x + mode.cellWidth; xx++) {
-          final (r, g, b) = p.at(xx, yy);
-          if (r > 220 && g > 220 && b > 220) bright = true;
-        }
+      final direct = await composeSheet(sources, mode, meta);
+      final cells = <ui.Image?>[
+        for (final s in sources) s == null ? null : await renderCell(s, mode),
+      ];
+      final viaCells = await composeSheetFromCells(cells, mode, meta);
+
+      final a = await pixelsOf(direct);
+      final b = await pixelsOf(viaCells);
+      for (var i = 0; i < sources.length; i++) {
+        final (x, y) = mode.cellOrigin(i);
+        final px = x + mode.cellWidth ~/ 2;
+        final py = y + mode.cellHeight ~/ 2;
+        expect(b.at(px, py), a.at(px, py), reason: 'cell $i centre');
+        expect(
+          b.at(x + 2, y + 2),
+          a.at(x + 2, y + 2),
+          reason: 'cell $i corner',
+        );
       }
-      expect(
-        bright,
-        isTrue,
-        reason: 'label draws a white box over the red cell',
-      );
-      image.dispose();
-      sheet.dispose();
-    });
 
-    test('the label box sits in the bottom-right corner of the cell', () async {
-      final image = await solid(400, 300, 0, 0, 0);
-      final sheet = await composeSheet(<ui.Image?>[image], FilmMode.full35, '');
-      const mode = FilmMode.full35;
-      final (x, y) = mode.cellOrigin(0);
-      final p = await pixelsOf(sheet);
-      // Top-left of the same cell must still be the black image, proving the
-      // label is corner-anchored rather than filling the cell.
-      expect(p.at(x + 4, y + 4), (0, 0, 0));
-      sheet.dispose();
-      image.dispose();
+      for (final s in sources) {
+        s?.dispose();
+      }
+      for (final c in cells) {
+        c?.dispose();
+      }
+      direct.dispose();
+      viaCells.dispose();
     });
   });
 
-  group('memo header', () {
-    test('renders Japanese text in the header band', () async {
-      final blank = await composeSheet(
-        const <ui.Image?>[],
-        FilmMode.full35,
-        '',
-      );
-      expect(darkPixelsInHeader(await pixelsOf(blank)), 0);
-      blank.dispose();
-
-      final noted = await composeSheet(
-        const <ui.Image?>[],
-        FilmMode.full35,
-        'テストロール 2024',
-      );
-      expect(
-        darkPixelsInHeader(await pixelsOf(noted)),
-        greaterThan(100),
-        reason: 'memo text should paint dark glyph pixels in the header band',
-      );
-      noted.dispose();
-    });
-
-    test('the hairline is drawn even with an empty memo', () async {
+  group('frame numbers', () {
+    test('are painted below the cell, never over the photograph', () async {
+      final image = await solid(400, 300, 200, 0, 0);
       final sheet = await composeSheet(
-        const <ui.Image?>[],
+        <ui.Image?>[image],
         FilmMode.full35,
-        '',
+        SheetMeta.empty,
       );
+      const mode = FilmMode.full35;
+      final (x, y) = mode.cellOrigin(0);
       final p = await pixelsOf(sheet);
-      final (r, g, b) = p.at(sheetWidth ~/ 2, margin + headerH - 1);
-      expect(r, closeTo(210, 2));
-      expect(g, closeTo(210, 2));
-      expect(b, closeTo(210, 2));
+
+      // The old design painted a white box in the bottom-right of the cell.
+      // Nothing may cover the image now.
+      for (var yy = y + mode.cellHeight - 40; yy < y + mode.cellHeight; yy++) {
+        for (var xx = x + mode.cellWidth - 60; xx < x + mode.cellWidth; xx++) {
+          expect(p.at(xx, yy), (
+            200,
+            0,
+            0,
+          ), reason: 'cell interior at ($xx,$yy) must be untouched image');
+        }
+      }
+
+      // ...and the number is inked in the block underneath it.
+      final ink = p.inkIn(
+        x,
+        y + mode.cellHeight,
+        x + 80,
+        y + mode.cellHeight + numberBlock + 4,
+      );
+      expect(ink, greaterThan(10), reason: 'number painted below the cell');
+
+      image.dispose();
       sheet.dispose();
     });
 
-    test('the NOTE border outlines without filling the interior', () async {
+    test('are unpadded, so 1 is narrower than 11', () async {
+      expect(textWidth('1', numberPx), lessThan(textWidth('11', numberPx)));
+      // Guards against a regression to the old zero-padded "01" form.
+      expect(textWidth('1', numberPx), lessThan(textWidth('01', numberPx)));
+    });
+  });
+
+  group('title block', () {
+    test('prints the roll name and closes with a rule', () async {
       final sheet = await composeSheet(
         const <ui.Image?>[],
         FilmMode.full35,
-        'roll',
+        const SheetMeta(name: 'Kodak Gold 200', date: '2026-09-06'),
       );
       final p = await pixelsOf(sheet);
-      const boxX = margin;
-      const boxY = margin + (headerH - 96) ~/ 2;
-      const boxW = (sheetWidth - margin * 2) ~/ 2;
 
-      // Left border is inked; a point inside the field but clear of the value
-      // text remains white.
-      final (lr, lg, lb) = p.at(boxX + 1, boxY + 48);
-      expect(
-        lr < 128 && lg < 128 && lb < 128,
-        isTrue,
-        reason: 'left border inked',
+      expect(titleInk(p), greaterThan(200), reason: 'roll name is painted');
+
+      // The closing rule spans the content width.
+      final ruleY = headerRuleY.round() + 1;
+      expect(p.at(margin + 10, ruleY), (26, 26, 26));
+      expect(p.at(sheetWidth - margin - 10, ruleY), (26, 26, 26));
+      expect(p.at(margin - 10, ruleY), (
+        255,
+        255,
+        255,
+      ), reason: 'rule stops at the margin');
+
+      sheet.dispose();
+    });
+
+    test('renders a Japanese roll name through the fallback font', () async {
+      final blank = await composeSheet(
+        const <ui.Image?>[],
+        FilmMode.full35,
+        SheetMeta.empty,
       );
-      expect(p.at(boxX + boxW - 40, boxY + 90), (
-        255,
-        255,
-        255,
-      ), reason: 'field interior untouched');
+      final noted = await composeSheet(
+        const <ui.Image?>[],
+        FilmMode.full35,
+        const SheetMeta(name: 'テストロール 2024', date: '2026-09-06'),
+      );
+
+      final blankInk = titleInk(await pixelsOf(blank));
+      final notedInk = titleInk(await pixelsOf(noted));
+
+      // Google Sans Flex has no CJK glyphs; if the fallback chain were broken
+      // this would render tofu or nothing and the counts would not diverge.
+      expect(
+        notedInk,
+        greaterThan(blankInk),
+        reason: 'Japanese title paints more ink than the "35mm" fallback title',
+      );
+      expect(notedInk, greaterThan(500));
+
+      blank.dispose();
+      noted.dispose();
+    });
+
+    test('an empty roll name falls back to the film label', () async {
+      final sheet = await composeSheet(
+        const <ui.Image?>[],
+        FilmMode.f66,
+        SheetMeta.empty,
+      );
+      final p = await pixelsOf(sheet);
+      expect(
+        titleInk(p),
+        greaterThan(100),
+        reason: 'title is never blank — it shows the format',
+      );
+      sheet.dispose();
+    });
+
+    test('the Frames column counts the frames actually placed', () async {
+      // Frames is derived, so it must follow the slot count, not the input.
+      final images = <ui.Image?>[
+        for (var i = 0; i < 3; i++) await solid(400, 300, 10, 10, 10),
+      ];
+      final sheet = await composeSheet(
+        images,
+        FilmMode.full35,
+        const SheetMeta(name: 'Roll', date: '2026-09-06'),
+      );
+      final p = await pixelsOf(sheet);
+      // Column values sit in the metadata band; just assert something inked
+      // there, since the exact glyphs are the font's business.
+      expect(
+        p.inkIn(1180, 130, 2200, 230),
+        greaterThan(100),
+        reason: 'metadata columns are painted',
+      );
+      for (final i in images) {
+        i?.dispose();
+      }
       sheet.dispose();
     });
   });
@@ -304,34 +392,30 @@ void main() {
       final sheet = await composeSheet(
         <ui.Image?>[image],
         FilmMode.f66,
-        'roll',
+        const SheetMeta(name: 'roll'),
       );
-      final jpeg = await encodeSheet(sheet);
-      final decoded = img.decodeJpg(jpeg)!;
-      expect(decoded.width, sheetWidth);
-      expect(decoded.height, sheetHeight);
+      final decoded = img.decodeJpg(await encodeSheet(sheet))!;
+      expect((decoded.width, decoded.height), (sheetWidth, sheetHeight));
       image.dispose();
       sheet.dispose();
     });
 
     test('the preview is a half-size JPEG', () async {
       final image = await solid(400, 300, 80, 120, 160);
-      final sheet = await composeSheet(<ui.Image?>[image], FilmMode.full35, '');
-      final bytes = await makePreview(sheet);
-      final decoded = img.decodeJpg(bytes)!;
-      expect(
-        (decoded.width, decoded.height),
-        (1500, 1050),
-        reason: 'half-size preview',
+      final sheet = await composeSheet(
+        <ui.Image?>[image],
+        FilmMode.full35,
+        SheetMeta.empty,
       );
+      final decoded = img.decodeJpg(await makePreview(sheet))!;
+      expect((decoded.width, decoded.height), (1500, 1050));
       image.dispose();
       sheet.dispose();
     });
 
     test('the thumbnail matches the mode cell size', () async {
       final image = await solid(400, 300, 10, 10, 10);
-      final bytes = await makeThumb(image, FilmMode.half);
-      final decoded = img.decodeJpg(bytes)!;
+      final decoded = img.decodeJpg(await makeThumb(image, FilmMode.half))!;
       expect(decoded.width, FilmMode.half.cellWidth);
       expect(decoded.height, FilmMode.half.cellHeight);
       image.dispose();

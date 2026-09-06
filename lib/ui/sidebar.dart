@@ -3,8 +3,12 @@
 /// Japanese strings are copied verbatim from the Tauri original.
 library;
 
-import 'package:flutter/material.dart';
+import 'dart:async';
 
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import '../core/date_text.dart';
 import '../core/geometry.dart';
 import 'theme.dart';
 
@@ -14,7 +18,9 @@ class AppSidebar extends StatelessWidget {
     required this.imagesCount,
     required this.mode,
     required this.onModeChange,
-    required this.memoController,
+    required this.rollNameController,
+    required this.authorController,
+    required this.dateController,
     required this.fileNameController,
     required this.onPickFiles,
     required this.onExport,
@@ -26,7 +32,9 @@ class AppSidebar extends StatelessWidget {
   final int imagesCount;
   final FilmMode mode;
   final ValueChanged<FilmMode> onModeChange;
-  final TextEditingController memoController;
+  final TextEditingController rollNameController;
+  final TextEditingController authorController;
+  final TextEditingController dateController;
   final TextEditingController fileNameController;
   final VoidCallback onPickFiles;
   final VoidCallback onExport;
@@ -102,13 +110,20 @@ class AppSidebar extends StatelessWidget {
                   const SizedBox(height: 6),
                   _ModeSelect(mode: mode, onChanged: onModeChange),
                   const SizedBox(height: 16),
-                  const _FieldLabel('メモ（シート上部に印字）'),
+                  const _FieldLabel('ロール名（シート表題に印字）'),
                   const SizedBox(height: 6),
                   _TextField(
-                    controller: memoController,
-                    hint: 'ロール名・日付・現像所など',
-                    maxLines: 2,
+                    controller: rollNameController,
+                    hint: 'Kodak Gold 200 など',
                   ),
+                  const SizedBox(height: 16),
+                  const _FieldLabel('撮影者'),
+                  const SizedBox(height: 6),
+                  _TextField(controller: authorController, hint: 'あなたの名前'),
+                  const SizedBox(height: 16),
+                  const _FieldLabel('日付'),
+                  const SizedBox(height: 6),
+                  _DateField(controller: dateController),
                   const SizedBox(height: 16),
                   const _FieldLabel('ファイル名'),
                   const SizedBox(height: 6),
@@ -206,6 +221,15 @@ class _OutlineButton extends StatelessWidget {
   );
 }
 
+/// Film mode picker.
+///
+/// Uses [DropdownMenu] rather than `DropdownButtonFormField` because only the
+/// former exposes `menuStyle`: the popup needs the same fill, 1px border and
+/// 6px radius as the trigger, and `DropdownButton`'s menu offers no control
+/// over its border or elevation, so it always reads as a different object.
+///
+/// `requestFocusOnTap: false` keeps it a picker rather than a combo box — no
+/// caret, no typing.
 class _ModeSelect extends StatelessWidget {
   const _ModeSelect({required this.mode, required this.onChanged});
 
@@ -214,20 +238,68 @@ class _ModeSelect extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DropdownButtonFormField<FilmMode>(
-      initialValue: mode,
-      dropdownColor: Palette.control,
-      isDense: true,
-      style: const TextStyle(fontSize: 13, color: Palette.textPrimary),
-      decoration: _inputDecoration(),
-      items: [
+    return DropdownMenu<FilmMode>(
+      initialSelection: mode,
+      requestFocusOnTap: false,
+      expandedInsets: EdgeInsets.zero,
+      textStyle: const TextStyle(fontSize: 13, color: Palette.textPrimary),
+      inputDecorationTheme: _fieldDecorationTheme(),
+      trailingIcon: const Icon(
+        Icons.keyboard_arrow_down,
+        size: 18,
+        color: Palette.textMuted,
+      ),
+      selectedTrailingIcon: const Icon(
+        Icons.keyboard_arrow_up,
+        size: 18,
+        color: Palette.textMuted,
+      ),
+      menuStyle: MenuStyle(
+        backgroundColor: const WidgetStatePropertyAll(Palette.control),
+        // Material 3 tints elevated surfaces toward the seed colour; the shell
+        // is a fixed neutral palette, so suppress it.
+        surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+        shadowColor: const WidgetStatePropertyAll(Colors.transparent),
+        elevation: const WidgetStatePropertyAll(0),
+        padding: const WidgetStatePropertyAll(
+          EdgeInsets.symmetric(vertical: 4),
+        ),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(fieldRadius),
+            side: const BorderSide(color: Palette.controlBorder),
+          ),
+        ),
+      ),
+      dropdownMenuEntries: [
         for (final m in FilmMode.values)
-          DropdownMenuItem(
+          DropdownMenuEntry<FilmMode>(
             value: m,
-            child: Text('${m.label}（最大${m.capacity}枚）'),
+            label: '${m.label}（最大${m.capacity}枚）',
+            style: ButtonStyle(
+              foregroundColor: const WidgetStatePropertyAll(
+                Palette.textPrimary,
+              ),
+              textStyle: const WidgetStatePropertyAll(
+                TextStyle(fontSize: 13, color: Palette.textPrimary),
+              ),
+              backgroundColor: WidgetStateProperty.resolveWith(
+                (states) =>
+                    states.contains(WidgetState.hovered) ||
+                        states.contains(WidgetState.focused) ||
+                        states.contains(WidgetState.pressed)
+                    ? Palette.controlHover
+                    : Colors.transparent,
+              ),
+              shape: const WidgetStatePropertyAll(RoundedRectangleBorder()),
+              padding: const WidgetStatePropertyAll(
+                EdgeInsets.symmetric(horizontal: 10),
+              ),
+              minimumSize: const WidgetStatePropertyAll(Size.fromHeight(34)),
+            ),
           ),
       ],
-      onChanged: (value) {
+      onSelected: (value) {
         if (value != null) onChanged(value);
       },
     );
@@ -238,41 +310,163 @@ class _TextField extends StatelessWidget {
   const _TextField({
     required this.controller,
     required this.hint,
-    this.maxLines = 1,
+    this.focusNode,
+    this.suffix,
+    this.inputFormatters,
+    this.keyboardType,
   });
 
   final TextEditingController controller;
   final String hint;
-  final int maxLines;
+  final FocusNode? focusNode;
+  final Widget? suffix;
+  final List<TextInputFormatter>? inputFormatters;
+  final TextInputType? keyboardType;
 
   @override
   Widget build(BuildContext context) => TextField(
     controller: controller,
-    maxLines: maxLines,
+    focusNode: focusNode,
+    maxLines: 1,
+    inputFormatters: inputFormatters,
+    keyboardType: keyboardType,
     style: const TextStyle(fontSize: 12, color: Palette.textPrimary),
     cursorColor: Palette.textPrimary,
     decoration: _inputDecoration().copyWith(
       hintText: hint,
       hintStyle: const TextStyle(fontSize: 12, color: Palette.textFaint),
+      suffixIcon: suffix,
+      suffixIconConstraints: const BoxConstraints(minWidth: 32, minHeight: 28),
     ),
   );
 }
+
+/// Coerces every edit toward `YYYY-MM-DD`.
+///
+/// The caret always lands at the end. That is fine for a ten-character field
+/// filled left to right, and avoids the caret arithmetic a mid-string edit
+/// would otherwise need.
+class _DateInputFormatter extends TextInputFormatter {
+  const _DateInputFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final masked = maskDate(newValue.text);
+    return TextEditingValue(
+      text: masked,
+      selection: TextSelection.collapsed(offset: masked.length),
+    );
+  }
+}
+
+/// The 日付 field: masked typing plus a calendar button.
+///
+/// The mask guarantees the *shape*; it cannot rule out `2026-02-30`, so an
+/// unparseable value reverts to the last valid one when the field loses focus.
+/// The sheet therefore never prints a date that does not exist.
+class _DateField extends StatefulWidget {
+  const _DateField({required this.controller});
+
+  final TextEditingController controller;
+
+  @override
+  State<_DateField> createState() => _DateFieldState();
+}
+
+class _DateFieldState extends State<_DateField> {
+  late final FocusNode _focus = FocusNode()..addListener(_onFocusChange);
+  late String _lastValid = parseIsoDate(widget.controller.text) != null
+      ? widget.controller.text
+      : formatIsoDate(DateTime.now());
+
+  @override
+  void dispose() {
+    _focus
+      ..removeListener(_onFocusChange)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _onFocusChange() {
+    if (_focus.hasFocus) return;
+    final text = widget.controller.text;
+    if (parseIsoDate(text) != null) {
+      _lastValid = text;
+    } else if (text != _lastValid) {
+      widget.controller.text = _lastValid;
+    }
+  }
+
+  Future<void> _pick() async {
+    final current = parseIsoDate(widget.controller.text) ?? DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: current,
+      firstDate: DateTime(1900),
+      lastDate: DateTime(2200),
+    );
+    if (picked == null) return;
+    _lastValid = formatIsoDate(picked);
+    widget.controller.text = _lastValid;
+  }
+
+  @override
+  Widget build(BuildContext context) => _TextField(
+    controller: widget.controller,
+    focusNode: _focus,
+    hint: '2026-01-01',
+    keyboardType: TextInputType.number,
+    inputFormatters: const [_DateInputFormatter()],
+    suffix: IconButton(
+      onPressed: () => unawaited(_pick()),
+      icon: const Icon(
+        Icons.calendar_today_outlined,
+        size: 14,
+        color: Palette.textMuted,
+      ),
+      splashRadius: 14,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+      tooltip: 'カレンダーから選択',
+    ),
+  );
+}
+
+/// Corner radius shared by every field and by the dropdown's popup, so the
+/// menu reads as the same object as the control that opened it.
+const double fieldRadius = 6;
+
+const EdgeInsets _fieldPadding = EdgeInsets.symmetric(
+  horizontal: 10,
+  vertical: 8,
+);
+
+OutlineInputBorder _fieldBorder(Color color) => OutlineInputBorder(
+  borderRadius: BorderRadius.circular(fieldRadius),
+  borderSide: BorderSide(color: color),
+);
 
 InputDecoration _inputDecoration() => InputDecoration(
   isDense: true,
   filled: true,
   fillColor: Palette.control,
-  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-  border: OutlineInputBorder(
-    borderRadius: BorderRadius.circular(6),
-    borderSide: const BorderSide(color: Palette.controlBorder),
-  ),
-  enabledBorder: OutlineInputBorder(
-    borderRadius: BorderRadius.circular(6),
-    borderSide: const BorderSide(color: Palette.controlBorder),
-  ),
-  focusedBorder: OutlineInputBorder(
-    borderRadius: BorderRadius.circular(6),
-    borderSide: const BorderSide(color: Palette.focusBorder),
-  ),
+  contentPadding: _fieldPadding,
+  border: _fieldBorder(Palette.controlBorder),
+  enabledBorder: _fieldBorder(Palette.controlBorder),
+  focusedBorder: _fieldBorder(Palette.focusBorder),
+);
+
+/// The same decoration as [_inputDecoration], in the theme form [DropdownMenu]
+/// takes for its trigger.
+InputDecorationTheme _fieldDecorationTheme() => InputDecorationTheme(
+  isDense: true,
+  filled: true,
+  fillColor: Palette.control,
+  contentPadding: _fieldPadding,
+  border: _fieldBorder(Palette.controlBorder),
+  enabledBorder: _fieldBorder(Palette.controlBorder),
+  focusedBorder: _fieldBorder(Palette.focusBorder),
 );

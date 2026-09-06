@@ -11,6 +11,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # Japanese strings for Material widgets the app does not draw itself —
+  # currently the date picker behind the 日付 field.
+  flutter_localizations:
+    sdk: flutter
   # JPEG encoding — dart:ui rasterizes, package:image writes the file.
   image: ^4.5.4
   # Native open-file / choose-directory dialogs on desktop.
@@ -31,11 +35,19 @@ flutter:
     - assets/fonts/
 
   fonts:
-    # UDEV Gothic 35JPDOC (SIL OFL 1.1). Embedded so there is no runtime font
-    # lookup and Japanese memo text renders identically on every platform.
-    - family: UDEVGothic35JPDOC
+    # Google Sans Flex (SIL OFL 1.1) carries Latin; Noto Sans JP (SIL OFL 1.1)
+    # is the fallback that supplies CJK. Both are embedded, so there is no
+    # runtime font lookup and a sheet renders identically on every machine.
+    # See assets/fonts/OFL-*.txt.
+    - family: Google Sans Flex
       fonts:
-        - asset: assets/fonts/UDEVGothic35JPDOC-Regular.ttf
+        - asset: assets/fonts/GoogleSansFlex-Regular.ttf
           weight: 400
-        - asset: assets/fonts/UDEVGothic35JPDOC-Bold.ttf
+        - asset: assets/fonts/GoogleSansFlex-Bold.ttf
+          weight: 700
+    - family: Noto Sans JP
+      fonts:
+        - asset: assets/fonts/NotoSansJP-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/NotoSansJP-Bold.ttf
           weight: 700

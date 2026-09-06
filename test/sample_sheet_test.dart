@@ -8,19 +8,13 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:negadice/core/geometry.dart';
+import 'package:negadice/core/sheet_meta.dart';
 import 'package:negadice/render/sheet_renderer.dart';
-import 'package:negadice/render/text_metrics.dart';
 
-Future<void> loadFonts() async {
-  final loader = FontLoader(fontFamily)
-    ..addFont(rootBundle.load('assets/fonts/UDEVGothic35JPDOC-Regular.ttf'))
-    ..addFont(rootBundle.load('assets/fonts/UDEVGothic35JPDOC-Bold.ttf'));
-  await loader.load();
-}
+import 'font_fixture.dart';
 
 /// A frame with visible structure, so cover-fit cropping and rotation are
 /// obvious in the rendered sheet.
@@ -64,7 +58,11 @@ void main() {
     final sheet = await composeSheet(
       images,
       FilmMode.full35,
-      'テストロール 2024 · Kodak ProImage 100',
+      const SheetMeta(
+        name: 'テストロール 2024',
+        author: 'Romolintianus',
+        date: '2026-09-06',
+      ),
     );
     final jpeg = await encodeSheet(sheet);
 

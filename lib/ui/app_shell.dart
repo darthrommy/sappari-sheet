@@ -8,6 +8,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../core/geometry.dart';
+import '../core/sheet_meta.dart';
 import '../services/sheet_service.dart';
 import 'preview_pane.dart';
 import 'sidebar.dart';
@@ -22,10 +23,18 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   final SheetService _service = SheetService();
-  final TextEditingController _memo = TextEditingController();
+  final TextEditingController _rollName = TextEditingController();
+  final TextEditingController _author = TextEditingController();
+  final TextEditingController _date = TextEditingController(
+    text: SheetMeta.today(),
+  );
   final TextEditingController _fileName = TextEditingController(
     text: 'index_sheet',
   );
+
+  /// What the sheet's title block prints, read straight off the fields.
+  SheetMeta get _meta =>
+      SheetMeta(name: _rollName.text, author: _author.text, date: _date.text);
 
   StreamSubscription<Progress>? _progressSub;
 
@@ -43,14 +52,18 @@ class _AppShellState extends State<AppShell> {
       if (!mounted) return;
       setState(() => _progress = p.phase == ProgressPhase.done ? null : p);
     });
-    _memo.addListener(() => setState(() {}));
+    _rollName.addListener(() => setState(() {}));
+    _author.addListener(() => setState(() {}));
+    _date.addListener(() => setState(() {}));
   }
 
   @override
   void dispose() {
     _progressSub?.cancel();
     _service.dispose();
-    _memo.dispose();
+    _rollName.dispose();
+    _author.dispose();
+    _date.dispose();
     _fileName.dispose();
     super.dispose();
   }
@@ -129,11 +142,12 @@ class _AppShellState extends State<AppShell> {
         outDir,
         _fileName.text,
         _mode,
-        _memo.text,
+        _meta,
       );
       _toast('書き出しが完了しました');
       setState(() => _frames = const []);
-      _memo.clear();
+      // Only the roll name is per-roll; photographer and date carry over.
+      _rollName.clear();
     } on Object catch (err) {
       _toast('書き出しに失敗しました: $err', error: true);
     } finally {
@@ -164,7 +178,9 @@ class _AppShellState extends State<AppShell> {
               imagesCount: _frames.length,
               mode: _mode,
               onModeChange: (m) => unawaited(_changeMode(m)),
-              memoController: _memo,
+              rollNameController: _rollName,
+              authorController: _author,
+              dateController: _date,
               fileNameController: _fileName,
               onPickFiles: () => unawaited(_pickFiles()),
               onExport: () => unawaited(_export()),
@@ -176,7 +192,7 @@ class _AppShellState extends State<AppShell> {
               child: PreviewPane(
                 frames: _frames,
                 mode: _mode,
-                memo: _memo.text,
+                meta: _meta,
                 isDraggingOver: _isDraggingOver,
                 onPickFiles: () => unawaited(_pickFiles()),
                 onReorder: _reorder,
