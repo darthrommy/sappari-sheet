@@ -1,0 +1,41 @@
+name: negadice
+description: >-
+  Index sheet (contact sheet) generator for scanned film. One sheet, one roll.
+  Flutter desktop port of the Tauri original.
+publish_to: "none"
+version: 26.7.0+1
+
+environment:
+  sdk: ^3.13.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # JPEG encoding — dart:ui rasterizes, package:image writes the file.
+  image: ^4.5.4
+  # Native open-file / choose-directory dialogs on desktop.
+  file_selector: ^1.0.3
+  # OS drag-and-drop of files onto the window.
+  desktop_drop: ^0.6.0
+  cross_file: ^0.3.4+2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/fonts/
+
+  fonts:
+    # UDEV Gothic 35JPDOC (SIL OFL 1.1). Embedded so there is no runtime font
+    # lookup and Japanese memo text renders identically on every platform.
+    - family: UDEVGothic35JPDOC
+      fonts:
+        - asset: assets/fonts/UDEVGothic35JPDOC-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/UDEVGothic35JPDOC-Bold.ttf
+          weight: 700

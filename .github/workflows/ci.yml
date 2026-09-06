@@ -1,0 +1,57 @@
+name: CI
+
+# Formatting, lints, tests, and a release build. Runs on windows-latest because
+# Windows is the primary target and the runner image ships Visual Studio with
+# the C++ workload already installed.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.2
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Verify formatting
+        run: dart format --set-exit-if-changed .
+
+      - name: Analyze
+        run: flutter analyze --fatal-infos
+
+      - name: Test
+        run: flutter test
+
+      - name: Build (Windows, release)
+        run: flutter build windows --release
+
+      - name: Upload sample sheet
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sample-sheet
+          path: build/samples/*
+          if-no-files-found: ignore
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: negadice-windows
+          path: build/windows/x64/runner/Release/
+          if-no-files-found: error
