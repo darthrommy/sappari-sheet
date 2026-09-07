@@ -77,9 +77,12 @@ jobs:
           p = pathlib.Path("pubspec.yaml")
           # Binary I/O preserves the file's original line endings so releases
           # produce a one-line diff rather than converting CRLF to LF wholesale.
+          # The CR sits in a lookahead so the pattern also matches a CRLF file
+          # (the Windows runner checks out with core.autocrlf=true) without
+          # consuming that CR and flipping the line back to LF.
           data = p.read_bytes()
           new, n = re.subn(
-              rb"(?m)^version:[ \t]*[0-9][0-9.]*(?:\+\d+)?[ \t]*$",
+              rb"(?m)^version:[ \t]*[0-9][0-9.]*(?:\+\d+)?[ \t]*(?=\r?$)",
               f"version: {v}+1".encode(),
               data,
               count=1,
@@ -187,7 +190,7 @@ jobs:
           p = pathlib.Path("pubspec.yaml")
           data = p.read_bytes()
           new, n = re.subn(
-              rb"(?m)^version:[ \t]*[0-9][0-9.]*(?:\+\d+)?[ \t]*$",
+              rb"(?m)^version:[ \t]*[0-9][0-9.]*(?:\+\d+)?[ \t]*(?=\r?$)",
               f"version: {v}+1".encode(),
               data,
               count=1,
