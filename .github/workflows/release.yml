@@ -44,6 +44,12 @@ jobs:
           LAST=$(git tag -l "${PREFIX}*" | sed "s|^${PREFIX}||" | sort -n | tail -1)
           if [ -z "$LAST" ]; then PATCH=0; else PATCH=$((LAST + 1)); fi
           VERSION="${YEAR}.${MONTH}.${PATCH}"
+          # Belt and braces: the max+1 above cannot collide with a tag it saw,
+          # so a hit here means the tag was made outside this workflow.
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "Tag v$VERSION already exists -- refusing to re-release it." >&2
+            exit 1
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
           echo "Releasing v$VERSION"
@@ -207,12 +213,32 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "release $VERSION"
+          # An already-correct pubspec is not a failure: the tag below is what
+          # defines the release, not this commit. `git commit` exits 1 on an
+          # empty diff, which under `bash -e` would abort the whole job.
+          if git diff --quiet; then
+            echo "pubspec.yaml already reads $VERSION -- nothing to commit."
+          else
+            git commit -am "release $VERSION"
+          fi
           # Retry once if main moved while we were building.
           git push origin "HEAD:$BRANCH" || {
             git pull --rebase origin "$BRANCH"
             git push origin "HEAD:$BRANCH"
           }
+
+      # A DRAFT release does not create its tag -- GitHub only cuts the ref when
+      # the draft is published. `prepare` counts tags to pick the next patch, so
+      # leaving tag creation to `gh release create --draft` meant every run
+      # recomputed the same version until a human published the draft. Push the
+      # tag here instead, after the branch push settles (a rebase above would
+      # have moved HEAD), so the counter always sees the releases already cut.
+      - name: Tag the release commit
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          git tag -a "$TAG" -m "Sappari Sheet $TAG"
+          git push origin "refs/tags/$TAG"
 
       - name: Download all artifacts
         uses: actions/download-artifact@v8
@@ -229,9 +255,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.prepare.outputs.tag }}
         run: |
+          # The tag already exists by now, so --target would be ignored.
           gh release create "$TAG" \
             --draft \
-            --target "$(git rev-parse HEAD)" \
             --title "Sappari Sheet $TAG" \
             --notes "Automated draft — edit these notes before publishing." \
             dist/*
