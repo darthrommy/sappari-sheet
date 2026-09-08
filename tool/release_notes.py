@@ -159,20 +159,30 @@ def format_notes(commits, prev_tag, new_tag, repo):
 def read_commits(prev_tag, new_tag):
     """Read the commits a release covers, newest last, merges excluded."""
     span = (prev_tag + ".." + new_tag) if prev_tag else new_tag
-    out = subprocess.run(
-        [
-            "git",
-            "log",
-            "--no-merges",
-            "--reverse",
-            "--pretty=format:%h" + FIELD_SEP + "%s" + FIELD_SEP + "%b" + RECORD_SEP,
-            span,
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    ).stdout
+    try:
+        out = subprocess.run(
+            [
+                "git",
+                "log",
+                "--no-merges",
+                "--reverse",
+                "--pretty=format:%h" + FIELD_SEP + "%s" + FIELD_SEP + "%b" + RECORD_SEP,
+                span,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        ).stdout
+    except subprocess.CalledProcessError as error:
+        # Nearly always a tag this clone has not fetched. This command is
+        # documented for previewing a release by hand, so say so rather than
+        # spilling a traceback over the terminal.
+        raise SystemExit(
+            "Could not read the commit range " + span + ".\n"
+            + (error.stderr or "").strip()
+            + "\nIf a tag is missing, try: git fetch --tags"
+        ) from None
 
     commits = []
     for record in out.split(RECORD_SEP):

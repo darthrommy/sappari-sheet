@@ -6,9 +6,12 @@ Stdlib only -- these run on the release workflow's ubuntu runner with no
 `pip install` step, so keep it that way.
 """
 
+import os
+import subprocess
+import tempfile
 import unittest
 
-from release_notes import Commit, format_notes
+from release_notes import Commit, format_notes, read_commits
 
 REPO = "darthrommy/sappari-sheet"
 
@@ -254,6 +257,88 @@ class SubjectCleanupTest(unittest.TestCase):
         body = notes([Commit("abc1234", "Fix: something", "")])
         self.assertIn("Other changes", body)
         self.assertNotIn("## Bug Fixes", body)
+
+
+class ReadCommitsTest(unittest.TestCase):
+    """Exercises the git-reading half against a real repository.
+
+    Everything above tests the formatter with hand-built Commits. These build
+    an actual repo instead, so the record/field separators are proven against
+    output git really emits -- a body with blank lines in it included.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.cwd = os.getcwd()
+        self.addCleanup(os.chdir, self.cwd)
+        self.git("init", "-b", "main")
+        self.git("config", "user.email", "test@example.com")
+        self.git("config", "user.name", "Test")
+        os.chdir(self.tmp.name)
+
+    def git(self, *args):
+        return subprocess.run(
+            ["git", "-C", self.tmp.name, *args],
+            check=True, capture_output=True, text=True, encoding="utf-8",
+        ).stdout
+
+    def commit(self, message):
+        path = os.path.join(self.tmp.name, "file.txt")
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(message + "\n")
+        self.git("add", "-A")
+        self.git("commit", "--no-verify", "-m", message)
+
+    def test_reads_a_commit_range_oldest_first(self):
+        self.commit("feat: before the tag")
+        self.git("tag", "v1.0.0")
+        self.commit("feat: first after")
+        self.commit("fix: second after")
+
+        commits = read_commits("v1.0.0", "HEAD")
+
+        self.assertEqual(
+            [c.subject for c in commits],
+            ["feat: first after", "fix: second after"],
+        )
+
+    def test_a_body_with_blank_lines_survives_the_record_separator(self):
+        self.commit("feat: before the tag")
+        self.git("tag", "v1.0.0")
+        self.git(
+            "commit", "--allow-empty", "--no-verify",
+            "-m", "fix: rewrite the settings file",
+            "-m", "The format changed.",
+            "-m", "BREAKING CHANGE: old settings are discarded",
+        )
+
+        commits = read_commits("v1.0.0", "HEAD")
+
+        self.assertEqual(len(commits), 1)
+        self.assertIn("The format changed.", commits[0].body)
+        self.assertIn("BREAKING CHANGE: old settings are discarded", commits[0].body)
+        # And the footer is still recognised once it has been through git.
+        body = format_notes(commits, prev_tag="v1.0.0", new_tag="v1.0.1", repo=REPO)
+        self.assertIn("## Breaking Changes", body)
+
+    def test_no_previous_tag_reads_the_whole_history(self):
+        self.commit("feat: the very first commit")
+        self.commit("fix: the second")
+
+        commits = read_commits("", "HEAD")
+
+        self.assertEqual(len(commits), 2)
+
+    def test_an_unknown_revision_fails_with_a_readable_message(self):
+        self.commit("feat: the only commit")
+
+        with self.assertRaises(SystemExit) as caught:
+            read_commits("v9.9.9", "HEAD")
+
+        message = str(caught.exception)
+        self.assertIn("v9.9.9..HEAD", message)
+        self.assertNotIn("Traceback", message)
 
 
 if __name__ == "__main__":
