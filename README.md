@@ -60,6 +60,9 @@ dart format --set-exit-if-changed .   # formatting
 flutter analyze --fatal-infos         # lints + types
 flutter test                          # unit + raster tests
 flutter build windows --release       # release build
+
+python tool/release_notes_test.py     # release-notes generator
+python tool/commit_msg_hook_test.py   # commit-message hook
 ```
 
 `flutter test` exercises the real `dart:ui` raster path with the bundled fonts,
@@ -78,6 +81,43 @@ for eyeballing.
 
 Both are machine-level setup, not repo configuration. CI on `windows-latest`
 has them already.
+
+## Releasing
+
+Cutting a release is one click: **Actions → Release → Run workflow**. It builds
+both platforms, tags, and opens a **draft** release with the notes already
+written. Read them, then publish by hand.
+
+The notes are not composed at release time — they are derived from the commit
+subjects between the previous tag and the new one, so the same range of commits
+always produces the same notes. That works only if every subject is a
+conventional-commit line:
+
+```
+type(optional-scope)!: description
+```
+
+`feat`, `fix` and `perf` become the **Features**, **Bug Fixes** and
+**Performance** sections. `docs`, `refactor`, `test`, `build`, `ci`, `chore`,
+`style` and `revert` are internal and are left out. A `!` before the colon, or
+a `BREAKING CHANGE:` footer, promotes a commit to **Breaking Changes** —
+including one whose type would otherwise be dropped. Anything unparseable still
+shows up, under a collapsed *Other changes* block, so a forgotten prefix costs
+a reader a click rather than a missing line.
+
+`.githooks/commit-msg` enforces that at commit time. Git does not clone hooks,
+so enable it once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+To read a release's notes before cutting it:
+
+```bash
+python tool/release_notes.py --prev-tag v26.9.0 --new-tag HEAD \
+  --repo darthrommy/sappari-sheet
+```
 
 ## Installer
 

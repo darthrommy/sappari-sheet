@@ -1,0 +1,56 @@
+#!/bin/sh
+# Reject a commit whose subject is not a conventional-commit line.
+#
+# The release notes are generated from these subjects (tool/release_notes.py),
+# so a missing prefix is a change that quietly falls out of the wrong section
+# of the next release. Catching it here costs one retyped line; catching it at
+# release time would cost a rewrite of pushed history.
+#
+# Enable it once per clone -- git does not clone hooks:
+#
+#     git config core.hooksPath .githooks
+#
+# Tests: python tool/commit_msg_hook_test.py
+
+set -u
+
+TYPES='feat|fix|perf|docs|refactor|test|build|ci|chore|style|revert'
+
+# The subject is the first line that is neither a git comment nor blank.
+subject=$(grep -v '^#' "$1" | grep -v '^[[:space:]]*$' | head -1)
+
+# Subjects git writes itself. Rejecting these would break `git merge`,
+# `git revert` and `git commit --fixup` for the sake of a rule that only
+# governs the lines a human (or Claude) composes.
+case "$subject" in
+	'Merge '* | 'Revert "'* | 'fixup! '* | 'squash! '* | 'amend! '*) exit 0 ;;
+esac
+
+if printf '%s\n' "$subject" | grep -Eq "^($TYPES)(\([^()]+\))?!?: .+$"; then
+	exit 0
+fi
+
+cat >&2 <<EOF
+✗ Commit rejected: the subject is not a conventional-commit line.
+
+    $subject
+
+The release notes are generated from these subjects, so the prefix decides
+which section of the next release a change lands in. Expected:
+
+    type(optional-scope)!: description
+
+  type   one of: $(printf '%s' "$TYPES" | tr '|' ' ')
+  scope  optional, e.g. fix(windows): ...
+  !      optional, marks a breaking change (or add a BREAKING CHANGE: footer)
+
+Examples:
+
+    feat: remember the film format between runs
+    fix(windows): match the version line in a CRLF pubspec
+    chore: bump the Flutter version
+
+feat, fix and perf appear in the notes. Everything else is internal and is
+left out of them.
+EOF
+exit 1

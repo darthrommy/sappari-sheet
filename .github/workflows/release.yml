@@ -11,6 +11,11 @@ name: Release
 # compiles each platform, and `publish` runs only if every build succeeded — it
 # is the single place that touches main, the tag, and the release. So a failed
 # build leaves no commit, no tag, and nothing to clean up.
+#
+# The notes are generated too, by tool/release_notes.py, from the
+# conventional-commit subjects between the previous tag and this one --
+# .githooks/commit-msg is what keeps those subjects parseable. The release is
+# still created as a DRAFT: read the generated notes, then publish by hand.
 
 on:
   workflow_dispatch:
@@ -29,6 +34,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
+      prev_tag: ${{ steps.version.outputs.prev_tag }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -53,6 +59,19 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
           echo "Releasing v$VERSION"
+          # The release the notes will be diffed against. Read here, in the one
+          # job that runs before `publish` creates the new tag -- asking later
+          # would return the tag we are cutting. Empty on the first release.
+          PREV_TAG=$(git tag -l 'v*' --sort=v:refname | tail -1)
+          echo "prev_tag=$PREV_TAG" >> "$GITHUB_OUTPUT"
+          echo "Notes will cover ${PREV_TAG:-the start of history}..v$VERSION"
+
+      # Cheap and early: a generator that cannot format its own fixtures should
+      # fail here, before an hour of Windows and macOS build time.
+      - name: Test the release-notes tooling
+        run: |
+          python tool/release_notes_test.py
+          python tool/commit_msg_hook_test.py
 
   build:
     needs: prepare
@@ -219,7 +238,8 @@ jobs:
           if git diff --quiet; then
             echo "pubspec.yaml already reads $VERSION -- nothing to commit."
           else
-            git commit -am "release $VERSION"
+            # `chore(release):` so the bump filters itself out of its own notes.
+            git commit -am "chore(release): $VERSION"
           fi
           # Retry once if main moved while we were building.
           git push origin "HEAD:$BRANCH" || {
@@ -250,6 +270,20 @@ jobs:
       - name: List staged files
         run: ls -lh dist
 
+      # Runs after the tag exists, so `$PREV_TAG..$TAG` resolves. Deterministic:
+      # the same range of commit subjects always yields the same markdown.
+      - name: Generate release notes
+        env:
+          PREV_TAG: ${{ needs.prepare.outputs.prev_tag }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          python tool/release_notes.py \
+            --prev-tag "$PREV_TAG" \
+            --new-tag "$TAG" \
+            --repo "$GITHUB_REPOSITORY" > release-notes.md
+          echo '----- generated notes -----'
+          cat release-notes.md
+
       - name: Create draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -259,5 +293,5 @@ jobs:
           gh release create "$TAG" \
             --draft \
             --title "Sappari Sheet $TAG" \
-            --notes "Automated draft — edit these notes before publishing." \
+            --notes-file release-notes.md \
             dist/*

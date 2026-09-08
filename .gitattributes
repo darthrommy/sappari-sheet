@@ -1,0 +1,5 @@
+# Git hooks are executed by /bin/sh. A CR at the end of the shebang makes a
+# clone on macOS or Linux fail with "bad interpreter: /bin/sh^M", so these are
+# pinned to LF regardless of the platform they are checked out on.
+.githooks/** text eol=lf
+*.sh text eol=lf
