@@ -9,13 +9,24 @@ import 'package:flutter/material.dart';
 
 import '../core/geometry.dart';
 import '../core/sheet_meta.dart';
+import '../services/settings_store.dart';
 import '../services/sheet_service.dart';
 import 'preview_pane.dart';
 import 'sidebar.dart';
 import 'theme.dart';
 
 class AppShell extends StatefulWidget {
-  const AppShell({super.key});
+  const AppShell({
+    super.key,
+    required this.store,
+    required this.initialSettings,
+  });
+
+  final SettingsStore store;
+
+  /// What the last run left behind, or null when the user has not opted in —
+  /// loaded before the first frame so the fields never populate late.
+  final AppSettings? initialSettings;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -29,9 +40,7 @@ class _AppShellState extends State<AppShell> {
   final TextEditingController _date = TextEditingController(
     text: SheetMeta.today(),
   );
-  final TextEditingController _fileName = TextEditingController(
-    text: 'index_sheet',
-  );
+  final TextEditingController _fileName = TextEditingController();
 
   /// What the sheet's title block prints, read straight off the fields.
   SheetMeta get _meta => SheetMeta(
@@ -43,7 +52,13 @@ class _AppShellState extends State<AppShell> {
 
   StreamSubscription<Progress>? _progressSub;
 
-  FilmMode _mode = FilmMode.full35;
+  /// The author field has a listener firing on every keystroke, so writes are
+  /// coalesced rather than hitting the disk per character.
+  Timer? _saveTimer;
+  static const Duration _saveDebounce = Duration(milliseconds: 500);
+
+  late bool _remember;
+  late FilmMode _mode;
   List<Frame> _frames = const [];
   bool _isAnalyzing = false;
   bool _isGenerating = false;
@@ -53,18 +68,32 @@ class _AppShellState extends State<AppShell> {
   @override
   void initState() {
     super.initState();
+    // A missing file means the box was never checked; its defaults are the
+    // same values the fields would have started with anyway.
+    final restored = widget.initialSettings ?? AppSettings.defaults;
+    _remember = widget.initialSettings != null;
+    _author.text = restored.author;
+    _fileName.text = restored.fileName;
+    _mode = restored.mode;
+
     _progressSub = _service.progress.listen((p) {
       if (!mounted) return;
       setState(() => _progress = p.phase == ProgressPhase.done ? null : p);
     });
     _rollName.addListener(() => setState(() {}));
     _description.addListener(() => setState(() {}));
-    _author.addListener(() => setState(() {}));
+    _author.addListener(() {
+      setState(() {});
+      _scheduleSave();
+    });
     _date.addListener(() => setState(() {}));
+    // Not part of the sheet, so it needs no rebuild — only a save.
+    _fileName.addListener(_scheduleSave);
   }
 
   @override
   void dispose() {
+    _saveTimer?.cancel();
     _progressSub?.cancel();
     _service.dispose();
     _rollName.dispose();
@@ -73,6 +102,48 @@ class _AppShellState extends State<AppShell> {
     _date.dispose();
     _fileName.dispose();
     super.dispose();
+  }
+
+  AppSettings get _settings => AppSettings(
+    author: _author.text,
+    fileName: _fileName.text,
+    mode: _mode,
+  );
+
+  void _scheduleSave() {
+    if (!_remember) return;
+    _saveTimer?.cancel();
+    _saveTimer = Timer(_saveDebounce, () => unawaited(_saveNow()));
+  }
+
+  /// Writes now, cancelling anything already queued. A failure here costs a
+  /// remembered value and nothing else, so it stays quiet rather than
+  /// interrupting an export with a toast.
+  Future<void> _saveNow() async {
+    _saveTimer?.cancel();
+    _saveTimer = null;
+    try {
+      await widget.store.save(_settings);
+    } on Object {
+      // Ignored deliberately: convenience, not data.
+    }
+  }
+
+  Future<void> _setRemember(bool value) async {
+    setState(() => _remember = value);
+    if (value) {
+      await _saveNow();
+      return;
+    }
+    _saveTimer?.cancel();
+    _saveTimer = null;
+    try {
+      // Unchecking leaves nothing on disk — the absent file is what tells the
+      // next run not to restore anything.
+      await widget.store.clear();
+    } on Object {
+      // Ignored deliberately.
+    }
   }
 
   void _toast(String message, {bool error = false}) {
@@ -119,6 +190,7 @@ class _AppShellState extends State<AppShell> {
 
   Future<void> _changeMode(FilmMode next) async {
     setState(() => _mode = next);
+    _scheduleSave();
     if (_frames.isEmpty) return;
     // Re-thumbnail for the new cell size, preserving the user's arrangement.
     await _analyze(_frames.map((f) => f.path).toList(), next, sort: false);
@@ -141,6 +213,10 @@ class _AppShellState extends State<AppShell> {
     }
     final outDir = await getDirectoryPath(confirmButtonText: '保存先フォルダを選択');
     if (outDir == null) return;
+
+    // Flush before the long operation: an export is the point at which the
+    // current values have clearly proven themselves worth keeping.
+    if (_remember) await _saveNow();
 
     setState(() => _isGenerating = true);
     try {
@@ -191,6 +267,8 @@ class _AppShellState extends State<AppShell> {
               authorController: _author,
               dateController: _date,
               fileNameController: _fileName,
+              remember: _remember,
+              onRememberChanged: (v) => unawaited(_setRemember(v)),
               onPickFiles: () => unawaited(_pickFiles()),
               onExport: () => unawaited(_export()),
               canExport: !_isGenerating && !_isAnalyzing && _frames.isNotEmpty,

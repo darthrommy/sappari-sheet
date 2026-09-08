@@ -21,6 +21,8 @@ class AppSidebar extends StatelessWidget {
     required this.authorController,
     required this.dateController,
     required this.fileNameController,
+    required this.remember,
+    required this.onRememberChanged,
     required this.onPickFiles,
     required this.onExport,
     required this.canExport,
@@ -36,6 +38,10 @@ class AppSidebar extends StatelessWidget {
   final TextEditingController authorController;
   final TextEditingController dateController;
   final TextEditingController fileNameController;
+
+  /// Whether 撮影者・ファイル名・フィルム形式 are kept for the next run.
+  final bool remember;
+  final ValueChanged<bool> onRememberChanged;
   final VoidCallback onPickFiles;
   final VoidCallback onExport;
   final bool canExport;
@@ -153,6 +159,13 @@ class AppSidebar extends StatelessWidget {
                     '拡張子 .jpg は自動で追加されます',
                     style: TextStyle(fontSize: 11, color: Palette.textFaint),
                   ),
+                  const SizedBox(height: 20),
+                  // One control, so it stays inside シート設定 rather than
+                  // earning a divider of its own.
+                  _RememberToggle(
+                    value: remember,
+                    onChanged: onRememberChanged,
+                  ),
                 ],
               ),
             ),
@@ -209,6 +222,73 @@ class _FieldLabel extends StatelessWidget {
     text,
     style: const TextStyle(fontSize: 12, color: Palette.textSecondary),
   );
+}
+
+/// Opt-in switch for carrying 撮影者・ファイル名・フィルム形式 to the next run.
+/// The whole row is the hit target — a 18px checkbox alone is a poor one.
+class _RememberToggle extends StatelessWidget {
+  const _RememberToggle({required this.value, required this.onChanged});
+
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => onChanged(!value),
+      borderRadius: BorderRadius.circular(6),
+      hoverColor: Palette.controlHover,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: Checkbox(
+                value: value,
+                onChanged: (next) => onChanged(next ?? false),
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                side: const BorderSide(color: Palette.controlBorder),
+                fillColor: WidgetStateProperty.resolveWith(
+                  (states) => states.contains(WidgetState.selected)
+                      ? Palette.textPrimary
+                      : Colors.transparent,
+                ),
+                checkColor: Colors.black,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Text(
+                    '入力内容を記憶する',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Palette.textSecondary,
+                    ),
+                  ),
+                  SizedBox(height: 3),
+                  Text(
+                    '撮影者・ファイル名・フィルム形式を次回起動時に復元します',
+                    style: TextStyle(
+                      fontSize: 11,
+                      height: 1.4,
+                      color: Palette.textFaint,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _OutlineButton extends StatelessWidget {
